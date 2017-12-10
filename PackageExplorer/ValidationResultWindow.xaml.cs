@@ -11,13 +11,12 @@ namespace PackageExplorer
     /// <summary>
     /// Interaction logic for AboutWindow.xaml
     /// </summary>
-    public partial class AboutWindow : StandardDialog
+    public partial class ValidationResultWindow : StandardDialog
     {
-        public AboutWindow()
+        public ValidationResultWindow()
         {
             InitializeComponent();
             
-            ProductTitle.Text = $"{StringResources.Dialog_Title} ({ typeof(AboutWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion})";
         }
         
 
@@ -25,11 +24,6 @@ namespace PackageExplorer
         {
             DialogResult = true;
         }
-
-        private void Hyperlink_Click(object sender, RoutedEventArgs e)
-        {
-            var link = (Hyperlink) sender;
-            UriHelper.OpenExternalLink(link.NavigateUri);
-        }
+        
     }
 }
