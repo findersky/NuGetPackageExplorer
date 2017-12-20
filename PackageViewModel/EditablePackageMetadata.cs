@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
-using NuGet.Packaging.Signing;
 using NuGet.Versioning;
 using NuGetPackageExplorer.Types;
 using NuGetPe;
@@ -47,7 +46,7 @@ namespace PackageExplorerViewModel
         {
             RepositorySignatures = new List<SignatureInfo>(); // no null collections!
 
-            _showValidationResultsCommand = new RelayCommand(OnShowValidationResult);
+            _showValidationResultsCommand = new RelayCommand(OnShowValidationResult, () => ValidationResult != null );
         }   
 
         public EditablePackageMetadata(IPackageMetadata source, IUIServices uiServices) 
@@ -67,16 +66,17 @@ namespace PackageExplorerViewModel
             this.uiServices = uiServices;
         }
 
-        private void LoadSignatureData(ZipPackage package)
+        private async void LoadSignatureData(ZipPackage package)
         {
             if (package.IsSigned)
             {
                 PublisherSignature = package.PublisherSignature;
                 RepositorySignatures = package.RepositorySignatures;
+
+                await Task.Run(() => package.VerifySignatureAsync());
                 ValidationResult = new ValidationResultViewModel(package.VerificationResult);
             }
         }
-
 
         private void OnShowValidationResult()
         {
@@ -571,7 +571,7 @@ namespace PackageExplorerViewModel
 
         public override string ToString()
         {
-            return Id + "." + Version;
+            return Id + "." + ManifestUtility.ReplaceMetadataWithToken(Version.ToFullString());
         }
 
         private string IsValid(string propertyName)

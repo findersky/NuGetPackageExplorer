@@ -321,7 +321,7 @@ namespace NuGetPe
                 IsSigned = await reader.IsSignedAsync(CancellationToken.None);
                 if (IsSigned)
                 {
-                    // Load signature and verification data
+                    // Load signature data
                     var sigs = await reader.GetSignaturesAsync(CancellationToken.None);
                     var reposigs = new List<SignatureInfo>();
                     RepositorySignatures = reposigs;
@@ -338,7 +338,17 @@ namespace NuGetPe
                             reposigs.Add(new SignatureInfo(sig));
                         }
                     }
+                }
+            }
+        }
 
+        public async Task VerifySignatureAsync()
+        {
+            using (var reader = new PackageArchiveReader(_streamFactory(), false))
+            {
+                var signed = await reader.IsSignedAsync(CancellationToken.None);
+                if (signed)
+                {
                     // Check verification 
                     var trustProviders = SignatureVerificationProviderFactory.GetSignatureVerificationProviders();
                     var verifier = new PackageSignatureVerifier(trustProviders, SignedPackageVerifierSettings.RequireSigned);
@@ -380,13 +390,16 @@ namespace NuGetPe
 
         private class MyPackageArchiveReader : PackageArchiveReader
         {
+            ZipArchive zipArchive;
+
            /// <summary>Nupkg package reader</summary>
             /// <param name="stream">Nupkg data stream.</param>
             /// <param name="leaveStreamOpen">If true the nupkg stream will not be closed by the zip reader.</param>
             public MyPackageArchiveReader(Stream stream, bool leaveStreamOpen) : base(stream, leaveStreamOpen)
             {
+                zipArchive = new ZipArchive(stream, ZipArchiveMode.Read);
             }
-            public ReadOnlyCollection<ZipArchiveEntry> GetZipEntries() => Zip?.Entries;
+            public ReadOnlyCollection<ZipArchiveEntry> GetZipEntries() => zipArchive.Entries;
         }
     }
 }
