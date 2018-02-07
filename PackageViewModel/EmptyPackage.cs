@@ -36,7 +36,7 @@ namespace PackageExplorerViewModel
 
         public string Title
         {
-            get { return String.Empty; }
+            get { return string.Empty; }
         }
 
         public IEnumerable<string> Authors
@@ -191,8 +191,6 @@ namespace PackageExplorerViewModel
         public IEnumerable<PackageType> PackageTypes => Enumerable.Empty<PackageType>();
 
         public RepositoryMetadata Repository => null;
-
-        public bool IsSigned => false;
         
         #endregion
 

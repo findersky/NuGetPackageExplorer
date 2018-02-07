@@ -1,4 +1,4 @@
-using NuGet.Packaging;
+﻿using NuGet.Packaging;
 using System;
 using System.Collections.Generic;
 using System.Data.Services.Common;
@@ -6,7 +6,8 @@ using System.IO;
 using System.Linq;
 using NuGet.Versioning;
 using NuGet.Packaging.Core;
-using System.Security.Cryptography.X509Certificates;
+using NuGet.Packaging.Signing;
+using System.Threading.Tasks;
 
 namespace NuGetPe
 {
@@ -19,7 +20,7 @@ namespace NuGetPe
         keepInContent: false)]
     [EntityPropertyMapping("Summary", SyndicationItemProperty.Summary, SyndicationTextContentKind.Plaintext,
         keepInContent: false)]
-    public class DataServicePackage : IPackage
+    public class DataServicePackage : ISignaturePackage
     {
         public string Version { get; set; }
         public string Authors { get; set; }
@@ -31,7 +32,7 @@ namespace NuGetPe
         public DateTimeOffset? Published { get; set; }
         public bool IsPrerelease { get; set; }
 
-        public IPackage CorePackage { get; set; }
+        public ISignaturePackage CorePackage { get; set; }
 
         #region IPackage Members
 
@@ -39,32 +40,32 @@ namespace NuGetPe
 
         public string Title
         {
-            get { return CorePackage == null ? null : CorePackage.Title; }
+            get { return CorePackage?.Title; }
         }
 
         public IEnumerable<string> Owners
         {
-            get { return CorePackage == null ? null : CorePackage.Owners; }
+            get { return CorePackage?.Owners; }
         }
 
         public Uri IconUrl
         {
-            get { return CorePackage == null ? null : CorePackage.IconUrl; }
+            get { return CorePackage?.IconUrl; }
         }
 
         public Uri LicenseUrl
         {
-            get { return CorePackage == null ? null : CorePackage.LicenseUrl; }
+            get { return CorePackage?.LicenseUrl; }
         }
 
         public Uri ProjectUrl
         {
-            get { return CorePackage == null ? null : CorePackage.ProjectUrl; }
+            get { return CorePackage?.ProjectUrl; }
         }
 
         public Uri ReportAbuseUrl
         {
-            get { return CorePackage == null ? null : CorePackage.ReportAbuseUrl; }
+            get { return CorePackage?.ReportAbuseUrl; }
         }
 
         public int DownloadCount { get; set; }
@@ -83,32 +84,32 @@ namespace NuGetPe
 
         public string Description
         {
-            get { return CorePackage == null ? null : CorePackage.Description; }
+            get { return CorePackage?.Description; }
         }
 
         public string Summary
         {
-            get { return CorePackage == null ? null : CorePackage.Summary; }
+            get { return CorePackage?.Summary; }
         }
 
         public string ReleaseNotes
         {
-            get { return CorePackage == null ? null : CorePackage.ReleaseNotes; }
+            get { return CorePackage?.ReleaseNotes; }
         }
 
         public string Copyright
         {
-            get { return CorePackage == null ? null : CorePackage.Copyright; }
+            get { return CorePackage?.Copyright; }
         }
 
         public string Language
         {
-            get { return CorePackage == null ? null : CorePackage.Language; }
+            get { return CorePackage?.Language; }
         }
 
         public string Tags
         {
-            get { return CorePackage == null ? null : CorePackage.Tags; }
+            get { return CorePackage?.Tags; }
         }
 
         public bool Serviceable
@@ -157,6 +158,16 @@ namespace NuGetPe
 
         public bool IsSigned => CorePackage?.IsSigned ?? false;
 
+        public bool IsVerified => CorePackage?.IsVerified ?? false;
+
+        public SignatureInfo PublisherSignature => CorePackage?.PublisherSignature;
+
+        public SignatureInfo RepositorySignature => CorePackage?.RepositorySignature;
+
+        public VerifySignaturesResult VerificationResult => CorePackage?.VerificationResult;
+
+        public string Source => CorePackage?.Source;
+
         public IEnumerable<IPackageFile> GetFiles()
         {
             return CorePackage.GetFiles();
@@ -176,6 +187,16 @@ namespace NuGetPe
 
         public void Dispose()
         {
+        }
+
+        public Task LoadSignatureDataAsync()
+        {
+            return CorePackage?.LoadSignatureDataAsync();
+        }
+
+        public Task VerifySignatureAsync()
+        {
+            return CorePackage?.VerifySignatureAsync();
         }
     }
 }

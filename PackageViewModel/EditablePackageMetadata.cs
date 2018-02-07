@@ -44,8 +44,6 @@ namespace PackageExplorerViewModel
 
         private EditablePackageMetadata()
         {
-            RepositorySignatures = new List<SignatureInfo>(); // no null collections!
-
             _showValidationResultsCommand = new RelayCommand(OnShowValidationResult, () => ValidationResult != null );
         }   
 
@@ -61,17 +59,18 @@ namespace PackageExplorerViewModel
         {
             CopyFrom(source);
             // Zip Packages may be signed, we need to load that data async
-            if (source is ZipPackage zip)
+            if (source is ISignaturePackage zip)
                 LoadSignatureData(zip);
             this.uiServices = uiServices;
         }
 
-        private async void LoadSignatureData(ZipPackage package)
+        private async void LoadSignatureData(ISignaturePackage package)
         {
             if (package.IsSigned)
             {
                 PublisherSignature = package.PublisherSignature;
-                RepositorySignatures = package.RepositorySignatures;
+                RepositorySignature = package.RepositorySignature;
+                IsSigned = true;
 
                 await Task.Run(() => package.VerifySignatureAsync());
                 ValidationResult = new ValidationResultViewModel(package.VerificationResult);
@@ -88,7 +87,7 @@ namespace PackageExplorerViewModel
             get { return _authors; }
             set
             {
-                if (String.IsNullOrWhiteSpace(value))
+                if (string.IsNullOrWhiteSpace(value))
                 {
                     const string message = "Authors is required.";
                     SetError("Authors", message);
@@ -117,6 +116,8 @@ namespace PackageExplorerViewModel
             }
         }
 
+        public bool IsSigned { get; private set; }
+
         public ValidationResultViewModel ValidationResult
         {
             get { return validationResult; }
@@ -130,15 +131,15 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public IReadOnlyList<SignatureInfo> RepositorySignatures
+        public SignatureInfo RepositorySignature
         {
-            get { return repositoryCertificates; }
+            get { return repositoryCertificate; }
             set
             {
-                if (repositoryCertificates != value)
+                if (repositoryCertificate != value)
                 {
-                    repositoryCertificates = value;
-                    RaisePropertyChange(nameof(RepositorySignatures));
+                    repositoryCertificate = value;
+                    RaisePropertyChange(nameof(RepositorySignature));
                 }
             }
         }
@@ -210,10 +211,10 @@ namespace PackageExplorerViewModel
 
         public event PropertyChangedEventHandler PropertyChanged;
         private bool _developmentDependency;
-        RepositoryMetadata repository;
-        SignatureInfo publisherCertificate;
-        ValidationResultViewModel validationResult;
-        IReadOnlyList<SignatureInfo> repositoryCertificates;
+        private RepositoryMetadata repository;
+        private SignatureInfo publisherCertificate;
+        private ValidationResultViewModel validationResult;
+        private SignatureInfo repositoryCertificate;
 
         #endregion
 
@@ -226,7 +227,7 @@ namespace PackageExplorerViewModel
             {
                 try
                 {
-                    if (String.IsNullOrWhiteSpace(value))
+                    if (string.IsNullOrWhiteSpace(value))
                     {
                         throw new ArgumentException("Id is required.");
                     }
@@ -351,7 +352,7 @@ namespace PackageExplorerViewModel
             get { return _description; }
             set
             {
-                if (String.IsNullOrWhiteSpace(value))
+                if (string.IsNullOrWhiteSpace(value))
                 {
                     const string message = "Description is required.";
                     SetError("Description", message);
@@ -543,7 +544,7 @@ namespace PackageExplorerViewModel
                 return uri;
             }
 
-            string path = uri.OriginalString;
+            var path = uri.OriginalString;
             if (path.StartsWith("//", StringComparison.Ordinal))
             {
                 path = path.Substring(1);
@@ -566,7 +567,7 @@ namespace PackageExplorerViewModel
 
         private static string ConvertToString(IEnumerable<string> items)
         {
-            return String.Join(", ", items);
+            return string.Join(", ", items);
         }
 
         public override string ToString()
@@ -584,14 +585,13 @@ namespace PackageExplorerViewModel
                 }
             }
 
-            string error;
-            _propertyErrors.TryGetValue(propertyName, out error);
+            _propertyErrors.TryGetValue(propertyName, out var error);
             return error;
         }
 
         private void SetError(string property, string error)
         {
-            if (String.IsNullOrEmpty(error))
+            if (string.IsNullOrEmpty(error))
             {
                 _propertyErrors.Remove(property);
             }
@@ -614,7 +614,8 @@ namespace PackageExplorerViewModel
         public void ClearSignatures()
         {
             PublisherSignature = null;
-            RepositorySignatures = new List<SignatureInfo>();
+            RepositorySignature = null;
+            IsSigned = false;
         }
     }
 }

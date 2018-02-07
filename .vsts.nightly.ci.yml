@@ -10,9 +10,9 @@ steps:
   displayName: Setup Environment Variables
 
 - task: NuGetToolInstaller@0
-  displayName: Use NuGet 4.4
+  displayName: Use NuGet 4.5
   inputs:
-    versionSpec: 4.4.1
+    versionSpec: 4.5.0
 
 - powershell: |
     
@@ -22,7 +22,7 @@ steps:
     msbuild .\PackageExplorer\NuGetPackageExplorer.csproj /t:restore /bl:$(Build.ArtifactStagingDirectory)\Logs\restore.binlog
     
     # version    
-    nuget install NerdBank.GitVersioning -Version 2.0.41 -SolutionDir $(Build.SourcesDirectory) -Verbosity quiet -ExcludeVersion
+    nuget install NerdBank.GitVersioning -SolutionDir $(Build.SourcesDirectory) -Verbosity quiet -ExcludeVersion
     
     $vers = & $(Build.SourcesDirectory)\packages\nerdbank.gitversioning\tools\Get-Version.ps1
     $ver = $vers.SimpleVersion
@@ -46,11 +46,18 @@ steps:
     $doc = Get-Content ".\Build\store_badge.svg"    
     $doc | % { $_.Replace("ver_number", "$ver.0") } | Set-Content "$(Build.ArtifactStagingDirectory)\Store\version_badge.svg"
     
-    # Choco uses MajorMinorVersion
-    $vers = & $(Build.SourcesDirectory)\packages\nerdbank.gitversioning\tools\Get-Version.ps1
-    $ver = $vers.MajorMinorVersion
+    # Choco and NuGet 
+    # Get choco
+
+    $nugetVer = $vers.NuGetPackageVersion
+
+    nuget install chocolatey -SolutionDir $(Build.SourcesDirectory) -Verbosity quiet -ExcludeVersion 
+    $choco = "$(Build.SourcesDirectory)\packages\chocolatey\tools\chocolateyInstall\choco.exe"
     
-    nuget pack .\PackageExplorer\NuGetPackageExplorer.nuspec -version $ver -OutputDirectory $(Build.ArtifactStagingDirectory)\Nightly  
+    mkdir $(Build.ArtifactStagingDirectory)\Nightly\Choco
+
+    & $choco pack .\PackageExplorer\NuGetPackageExplorer.nuspec --version $nugetVer --OutputDirectory $(Build.ArtifactStagingDirectory)\Nightly\Choco
+    msbuild /t:pack .\Types\Types.csproj /p:Configuration=$(BuildConfiguration) /p:PackageOutputPath=$(Build.ArtifactStagingDirectory)\Nightly\NuGet
         
   displayName: Build Nightly
   

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -6,7 +6,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using NuGet.Frameworks;
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Packaging.Signing;
@@ -14,12 +13,11 @@ using NuGet.Versioning;
 
 namespace NuGetPe
 {
-    public class ZipPackage : IPackage, IDisposable
+    public class ZipPackage : IDisposable, ISignaturePackage
     {
         private const string AssemblyReferencesDir = "lib";
         private const string ResourceAssemblyExtension = ".resources.dll";
         private static readonly string[] AssemblyReferencesExtensions = new[] {".dll", ".exe", ".winmd"};
-        private static readonly List<SignatureInfo> emptyList = new List<SignatureInfo>();
 
         // paths to exclude
         private static readonly string[] ExcludePaths = new[] {"_rels", "package","[Content_Types]", ".signature"};
@@ -31,7 +29,7 @@ namespace NuGetPe
 
         public ZipPackage(string filePath)
         {
-            if (String.IsNullOrEmpty(filePath))
+            if (string.IsNullOrEmpty(filePath))
             {
                 throw new ArgumentException("Argument cannot be null.", "filePath");
             }
@@ -56,8 +54,6 @@ namespace NuGetPe
 
             };
             EnsureManifest();
-
-            RepositorySignatures = emptyList;
         }
 
         public string Source { get; }
@@ -285,7 +281,7 @@ namespace NuGetPe
 
         public SignatureInfo PublisherSignature { get; private set; }
 
-        public IReadOnlyList<SignatureInfo> RepositorySignatures { get; private set; }
+        public SignatureInfo RepositorySignature { get; private set; }
 
         public VerifySignaturesResult VerificationResult { get; private set; }
 
@@ -295,7 +291,7 @@ namespace NuGetPe
 
         public IEnumerable<IPackageFile> GetFiles()
         {
-            Stream stream = _streamFactory();
+            var stream = _streamFactory();
             var reader = new MyPackageArchiveReader(stream, false); // should not close
            
             _danglingStreams.Add(reader);           // clean up on dispose
@@ -321,23 +317,25 @@ namespace NuGetPe
                 IsSigned = await reader.IsSignedAsync(CancellationToken.None);
                 if (IsSigned)
                 {
-                    // Load signature data
-                    var sigs = await reader.GetSignaturesAsync(CancellationToken.None);
-                    var reposigs = new List<SignatureInfo>();
-                    RepositorySignatures = reposigs;
-
-                    foreach (var sig in sigs)
+                    try
                     {
+                        // Load signature data
+                        // TODO: Repo + Author sig?
+                        var sig = await reader.GetSignatureAsync(CancellationToken.None);
+                    
                         // There will only be one
                         if (sig.Type == SignatureType.Author)
                         {
                             PublisherSignature = new SignatureInfo(sig);
-                        }
-                        if (sig.Type == SignatureType.Repository)
+                        } else if (sig.Type == SignatureType.Repository)
                         {
-                            reposigs.Add(new SignatureInfo(sig));
+                            RepositorySignature = new SignatureInfo(sig);
                         }
                     }
+                    catch (SignatureException)
+                    {
+                    }
+                    
                 }
             }
         }
@@ -351,7 +349,7 @@ namespace NuGetPe
                 {
                     // Check verification 
                     var trustProviders = SignatureVerificationProviderFactory.GetSignatureVerificationProviders();
-                    var verifier = new PackageSignatureVerifier(trustProviders, SignedPackageVerifierSettings.RequireSigned);
+                    var verifier = new PackageSignatureVerifier(trustProviders, SignedPackageVerifierSettings.VerifyCommandDefaultPolicy);
 
                     VerificationResult = await verifier.VerifySignaturesAsync(reader, CancellationToken.None);
                 }
@@ -360,7 +358,7 @@ namespace NuGetPe
 
         private void EnsureManifest()
         {
-            using (Stream stream = _streamFactory())
+            using (var stream = _streamFactory())
             using (var reader = new PackageArchiveReader(stream))
             {
                 var manifest = Manifest.ReadFrom(reader.GetNuspec(), false);
@@ -390,7 +388,7 @@ namespace NuGetPe
 
         private class MyPackageArchiveReader : PackageArchiveReader
         {
-            ZipArchive zipArchive;
+            private ZipArchive zipArchive;
 
            /// <summary>Nupkg package reader</summary>
             /// <param name="stream">Nupkg data stream.</param>

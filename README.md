@@ -5,16 +5,16 @@
 [![Join the chat at https://gitter.im/NuGetPackageExplorer/NuGetPackageExplorer](https://badges.gitter.im/NuGetPackageExplorer/NuGetPackageExplorer.svg)](https://gitter.im/NuGetPackageExplorer/NuGetPackageExplorer?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 ## How to install
-You could install with the [Windows 10 Store](https://www.microsoft.com/store/apps/9wzdncrdmdm3) or [Chocolatey](https://chocolatey.org/packages/NugetPackageExplorer). The Microsoft Store is the preferred version for Windows 10 Anniversary Update and later.
+You could install with the [Microsoft Store](https://www.microsoft.com/store/apps/9wzdncrdmdm3) or [Chocolatey](https://chocolatey.org/packages/NugetPackageExplorer). The Microsoft Store is the preferred version for Windows 10 Anniversary Update and later. It auto-updates and is the full application.
 
 There also a nightly build available for direct install on Windows 10 Anniversary Update and higher. The nightly build installs alongside
 the release version with no interference.
 
 | Build Number | Link |
 | ------------ | ---- |
-| ![Nightly build number](https://nugetpackageexplorer.blob.core.windows.net/nightly/version_badge.svg?v=1)| [Download](https://nugetpackageexplorer.blob.core.windows.net/nightly/PackageExplorer.Package.Nightly.appxbundle)<br />*If you have a 6.0 version, uninstall it first*
-| ![Stable build number](https://nugetpackageexplorer.blob.core.windows.net/stable/version_badge.svg) | [Microsoft Store](https://www.microsoft.com/store/apps/9wzdncrdmdm3) |
-| ![Chocolatey build number](https://img.shields.io/chocolatey/v/NugetPackageExplorer.svg) | [Chocolatey](https://chocolatey.org/packages/NugetPackageExplorer) |
+| [![Nightly build number](https://nugetpackageexplorer.blob.core.windows.net/nightly/version_badge.svg?v=1)](https://nugetpackageexplorer.blob.core.windows.net/nightly/PackageExplorer.Package.Nightly.appxbundle)| [Download](https://nugetpackageexplorer.blob.core.windows.net/nightly/PackageExplorer.Package.Nightly.appxbundle)<br />*If you have a 6.0 version, uninstall it first*
+| [![Stable build number](https://nugetpackageexplorer.blob.core.windows.net/store/version_badge.svg)](https://www.microsoft.com/store/apps/9wzdncrdmdm3) | [Microsoft Store](https://www.microsoft.com/store/apps/9wzdncrdmdm3) |
+| [![Chocolatey build number](https://img.shields.io/chocolatey/v/NugetPackageExplorer.svg)](https://chocolatey.org/packages/NugetPackageExplorer) | [Chocolatey](https://chocolatey.org/packages/NugetPackageExplorer) |
 
 
 ### Microsoft Store (recommended, Windows 10 Anniversary Update needed)
@@ -89,5 +89,5 @@ Please check the [FAQ](https://github.com/NuGetPackageExplorer/NuGetPackageExplo
 
 Requirements to build the project:
 
-- VS2017 15.4 or later
+- VS2017 15.5 or later
 - [Windows 10 SDK](https://developer.microsoft.com/en-US/windows/downloads/windows-10-sdk)
