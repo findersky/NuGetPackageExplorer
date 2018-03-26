@@ -1,14 +1,11 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Threading;
 using System.Threading.Tasks;
-using NuGetPe;
 using NuGetPackageExplorer.Types;
 using NuGet.Packaging;
+using NuGet.Protocol.Core.Types;
+using NuGet.Common;
 
 namespace PackageExplorerViewModel
 {
@@ -18,71 +15,40 @@ namespace PackageExplorerViewModel
         private readonly IPackageMetadata _package;
         private readonly string _packageFilePath;
         private readonly ISettingsManager _settingsManager;
+        private readonly CredentialPublishProvider _credentialPublishProvider;
         private bool _canPublish = true;
         private bool _hasError;
-        private string _publishKey;
-        private string _publishCredentialUsername;
-        private string _publishCredentialPassword;
-        private bool _isAuthSet;
+        private string _publishKeyOrPAT;
         private bool? _publishAsUnlisted = true;
-        private bool? _appendV2ApiToUrl = true;
-        private bool? _useApiKey = true;
         private string _selectedPublishItem;
         private bool _showProgress;
         private string _status;
         private bool _suppressReadingApiKey;
-        private GalleryServer _uploadHelper;
 
         public PublishPackageViewModel(
             MruPackageSourceManager mruSourceManager,
             ISettingsManager settingsManager,
+            CredentialPublishProvider credentialPublishProvider,
             PackageViewModel viewModel)
         {
             _mruSourceManager = mruSourceManager;
             _settingsManager = settingsManager;
+            _credentialPublishProvider = credentialPublishProvider;
             _package = viewModel.PackageMetadata;
             _packageFilePath = viewModel.GetCurrentPackageTempFile();
             SelectedPublishItem = _mruSourceManager.ActivePackageSource;
             PublishAsUnlisted = _settingsManager.PublishAsUnlisted;
-            UseApiKey = _settingsManager.UseApiKey;
         }
 
-        public string PublishKey
+        public string PublishKeyOrPAT
         {
-            get { return _publishKey; }
+            get { return _publishKeyOrPAT; }
             set
             {
-                if (_publishKey != value)
+                if (_publishKeyOrPAT != value)
                 {
-                    _publishKey = value;
-                    OnPropertyChanged(nameof(PublishKey));
-                    CheckIfAuthIsSet();
-                }
-            }
-        }
-        public string PublishCredentialUsername
-        {
-            get { return _publishCredentialUsername; }
-            set
-            {
-                if (_publishCredentialUsername != value)
-                {
-                    _publishCredentialUsername = value;
-                    OnPropertyChanged(nameof(PublishCredentialUsername));
-                    CheckIfAuthIsSet();
-                }
-            }
-        }
-        public string PublishCredentialPassword
-        {
-            get { return _publishCredentialPassword; }
-            set
-            {
-                if (_publishCredentialPassword != value)
-                {
-                    _publishCredentialPassword = value;
-                    OnPropertyChanged(nameof(PublishCredentialPassword));
-                    CheckIfAuthIsSet();
+                    _publishKeyOrPAT = value;
+                    OnPropertyChanged(nameof(PublishKeyOrPAT));
                 }
             }
         }
@@ -122,7 +88,7 @@ namespace PackageExplorerViewModel
                             var key = _settingsManager.ReadApiKey(value);
                             if (!string.IsNullOrEmpty(key))
                             {
-                                PublishKey = key;
+                                PublishKeyOrPAT = key;
                             }
                         }
                     }
@@ -147,41 +113,6 @@ namespace PackageExplorerViewModel
                 }
             }
         }
-        public bool? UseApiKey
-        {
-            get { return _useApiKey; }
-            set
-            {
-                if (_useApiKey != value)
-                {
-                    _useApiKey = value;
-                    OnPropertyChanged(nameof(UseApiKey));
-                    CheckIfAuthIsSet();
-                }
-            }
-        }
-        public bool? UseCredentials
-
-        {
-            get { return !UseApiKey; }
-            set
-            {
-                UseApiKey = !value;
-            }
-        }
-
-        public bool? AppendV2ApiToUrl
-        {
-            get { return _appendV2ApiToUrl; }
-            set
-            {
-                if (_appendV2ApiToUrl != value)
-                {
-                    _appendV2ApiToUrl = value;
-                    OnPropertyChanged(nameof(AppendV2ApiToUrl));
-                }
-            }
-        }
 
         public string Id
         {
@@ -190,7 +121,7 @@ namespace PackageExplorerViewModel
 
         public string Version
         {
-            get { return _package.Version.ToString(); }
+            get { return _package.Version.ToFullString(); }
         }
 
         public bool HasError
@@ -231,36 +162,6 @@ namespace PackageExplorerViewModel
                 }
             }
         }
-        public bool IsAuthSet
-        {
-            get { return _isAuthSet; }
-            set
-            {
-                if (_isAuthSet != value)
-                {
-                    _isAuthSet = value;
-                    OnPropertyChanged(nameof(IsAuthSet));
-                }
-            }
-        }
-
-        private void CheckIfAuthIsSet()
-        {
-            IsAuthSet = (UseApiKey.HasValue && UseApiKey.Value && !string.IsNullOrWhiteSpace(PublishKey)) || (UseCredentials.HasValue && UseCredentials.Value && !string.IsNullOrWhiteSpace(PublishCredentialPassword)); ;
-        }
-
-        public GalleryServer GalleryServer
-        {
-            get
-            {
-                if (_uploadHelper == null ||
-                    !PublishUrl.Equals(_uploadHelper.Source, StringComparison.OrdinalIgnoreCase))
-                {
-                    _uploadHelper = new GalleryServer(PublishUrl, HttpUtility.CreateUserAgentString(Constants.UserAgentClient));
-                }
-                return _uploadHelper;
-            }
-        }
 
         public string Status
         {
@@ -282,10 +183,7 @@ namespace PackageExplorerViewModel
             ShowProgress = false;
             HasError = false;
             Status = (PublishAsUnlisted == true) ? "Package published and unlisted successfully." : "Package published successfully.";
-            if (UseApiKey.HasValue && UseApiKey.Value)
-            {
-                _settingsManager.WriteApiKey(PublishUrl, PublishKey);
-            }
+            _settingsManager.WriteApiKey(PublishUrl, PublishKeyOrPAT);
             CanPublish = true;
         }
 
@@ -310,17 +208,20 @@ namespace PackageExplorerViewModel
             HasError = false;
             CanPublish = false;
 
+            _credentialPublishProvider.PersonalAccessToken = PublishKeyOrPAT;
+
             try
             {
-                if (UseCredentials.HasValue && UseCredentials.Value)
+                var repository = PackageRepositoryFactory.CreateRepository(PublishUrl);
+                var updateResource = await repository.GetResourceAsync<PackageUpdateResource>();
+
+                await updateResource.Push(_packageFilePath, null, 999, false, s => PublishKeyOrPAT, s => PublishKeyOrPAT, NullLogger.Instance);
+
+                if (PublishAsUnlisted == true)
                 {
-                    await GalleryServer.PushPackageWithCredentials(_packageFilePath, _package, PublishAsUnlisted ?? false, AppendV2ApiToUrl ?? false, PublishCredentialUsername, PublishCredentialPassword);
+                    await updateResource.Delete(Id, Version, s => PublishKeyOrPAT, s => true, NullLogger.Instance);
                 }
-                else
-                {
-                    await GalleryServer.PushPackage(PublishKey, _packageFilePath, _package, PublishAsUnlisted ?? false, AppendV2ApiToUrl ?? false);
-                }
-                
+
                 OnCompleted();
             }
             catch (Exception exception)
@@ -331,6 +232,8 @@ namespace PackageExplorerViewModel
             {
                 // add the publish url to the list
                 _mruSourceManager.NotifyPackageSourceAdded(PublishUrl);
+
+                _credentialPublishProvider.PersonalAccessToken = null;
 
                 // this is to make sure the combo box doesn't goes blank after publishing
                 try
@@ -348,7 +251,6 @@ namespace PackageExplorerViewModel
         public void Dispose()
         {
             _settingsManager.PublishAsUnlisted = (bool)PublishAsUnlisted;
-            _settingsManager.UseApiKey = UseApiKey ?? true;
         }
     }
 }

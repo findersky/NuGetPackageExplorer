@@ -1,13 +1,14 @@
-﻿using System;
-using System.ComponentModel.Composition;
+﻿using System.ComponentModel.Composition;
 using System.ComponentModel.Composition.Hosting;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using NuGet.Credentials;
+using NuGet.Protocol;
 using PackageExplorer.Properties;
 using PackageExplorerViewModel;
+using PackageExplorerViewModel.Types;
 
 namespace PackageExplorer
 {
@@ -38,6 +39,13 @@ namespace PackageExplorer
 
         private async void Application_Startup(object sender, StartupEventArgs e)
         {
+            HttpHandlerResourceV3.CredentialService = new CredentialService(new ICredentialProvider[] {
+                Container.GetExportedValue<CredentialManagerProvider>(),
+                Container.GetExportedValue<CredentialPublishProvider>(),
+                Container.GetExportedValue<CredentialDialogProvider>(),
+            }, false);
+            HttpHandlerResourceV3.CredentialsSuccessfullyUsed = (uri, credentials) => Container.GetExportedValue<ICredentialManager>().Add(credentials, uri);
+
             MigrateSettings();
 
             var window = Container.GetExportedValue<MainWindow>();
@@ -88,7 +96,15 @@ namespace PackageExplorer
             // IMPORTANT: Call this after calling _container.Dispose(). Some exports relies on Dispose()
             // being called to save settings values.
             Settings.Default.IsFirstTimeAfterMigrate = false;
-            Settings.Default.Save();
+
+            // Try to save, if there's an IO error, just ignore it here, nothing we can do
+            try
+            {
+                Settings.Default.Save();
+            }
+            catch 
+            {
+            }
         }
     }
 }

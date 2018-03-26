@@ -28,6 +28,7 @@ namespace PackageExplorerViewModel
         private readonly IList<Lazy<IPackageRule>> _packageRules;
         private readonly ISettingsManager _settingsManager;
         private readonly IUIServices _uiServices;
+        private readonly CredentialPublishProvider _credentialPublishProvider;
 
         private ICommand _addContentFileCommand;
         private ICommand _addContentFolderCommand;
@@ -70,14 +71,16 @@ namespace PackageExplorerViewModel
             IUIServices uiServices,
             IPackageEditorService editorService,
             ISettingsManager settingsManager,
+            CredentialPublishProvider credentialPublishProvider,
             IList<Lazy<IPackageContentViewer, IPackageContentViewerMetadata>> contentViewerMetadata,
             IList<Lazy<IPackageRule>> packageRules)
         {
-            _settingsManager = settingsManager ?? throw new ArgumentNullException("settingsManager");
-            _editorService = editorService ?? throw new ArgumentNullException("editorService");
-            _uiServices = uiServices ?? throw new ArgumentNullException("uiServices");
-            _mruManager = mruManager ?? throw new ArgumentNullException("mruManager");
-            _package = package ?? throw new ArgumentNullException("package");
+            _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            _editorService = editorService ?? throw new ArgumentNullException(nameof(editorService));
+            _uiServices = uiServices ?? throw new ArgumentNullException(nameof(uiServices));
+            _mruManager = mruManager ?? throw new ArgumentNullException(nameof(mruManager));
+            _credentialPublishProvider = credentialPublishProvider ?? throw new ArgumentNullException(nameof(credentialPublishProvider));
+            _package = package ?? throw new ArgumentNullException(nameof(package));
             _contentViewerMetadata = contentViewerMetadata;
             _packageRules = packageRules;
 
@@ -100,6 +103,11 @@ namespace PackageExplorerViewModel
         internal IUIServices UIServices
         {
             get { return _uiServices; }
+        }
+
+        internal ISettingsManager SettingsManager
+        {
+            get { return _settingsManager; }
         }
 
         public bool IsInEditMetadataMode
@@ -658,7 +666,7 @@ namespace PackageExplorerViewModel
 
         private bool SaveContentCanExecute(PackageFile file)
         {
-            return !IsSigned && !IsInEditFileMode;
+            return !IsInEditFileMode;
         }
 
         #endregion
@@ -720,6 +728,7 @@ namespace PackageExplorerViewModel
                 var publishPackageViewModel = new PublishPackageViewModel(
                     mruSourceManager,
                     _settingsManager,
+                    _credentialPublishProvider,
                     this);
                 _uiServices.OpenPublishDialog(publishPackageViewModel);
             }
@@ -955,7 +964,7 @@ namespace PackageExplorerViewModel
 
         private IEditablePackageFile CreatePackageMetadataFile()
         {
-            var packageName = PackageMetadata + NuGetPe.Constants.ManifestExtension;
+            var packageName = PackageMetadata.FileName + NuGetPe.Constants.ManifestExtension;
             var filePath = Path.GetTempFileName();
             
             ExportManifest(filePath, askForConfirmation: false, includeFilesSection: false);
@@ -1057,8 +1066,7 @@ namespace PackageExplorerViewModel
                 return false;
             }
 
-            var selectedFolder = SelectedItem as PackageFolder;
-            return selectedFolder != null && !selectedFolder.ContainsFile(scriptName);
+            return SelectedItem is PackageFolder selectedFolder && !selectedFolder.ContainsFile(scriptName);
         }
 
         #endregion
@@ -1129,14 +1137,24 @@ namespace PackageExplorerViewModel
         [SuppressMessage("Microsoft.Design", "CA1024:UsePropertiesWhereAppropriate")]
         public string GetCurrentPackageTempFile()
         {
-            // handle signed packages since they cannot be resaved without losing the signature
-            if (IsSigned && _package is ISignaturePackage zip)
-            {
-                return zip.Source;
-            }
-
             var tempFile = Path.GetTempFileName();
-            PackageHelper.SavePackage(PackageMetadata, GetFiles(), tempFile, useTempFile: false);
+            try
+            {
+                // handle signed packages since they cannot be resaved without losing the signature
+                if (IsSigned && _package is ISignaturePackage zip)
+                {
+                    File.Copy(zip.Source, tempFile, overwrite: true);
+                }
+                else
+                {
+                    PackageHelper.SavePackage(PackageMetadata, GetFiles(), tempFile, useTempFile: false);
+                }
+            }
+            catch (Exception e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
+            }
+            
             if (File.Exists(tempFile))
             {
                 return tempFile;

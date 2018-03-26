@@ -16,19 +16,24 @@ skip_branch_with_pr: true
 before_build:
     - ps: msbuild /t:restore PackageExplorer\NuGetPackageExplorer.csproj
     - ps: |
-        $vers = & $env:UserProfile\.nuget\packages\nerdbank.gitversioning\2.1.11\tools\Get-Version.ps1
+        nuget install NerdBank.GitVersioning -SolutionDir $Env:APPVEYOR_BUILD_FOLDER -Verbosity quiet -ExcludeVersion
+        $vers = & $env:APPVEYOR_BUILD_FOLDER\packages\nerdbank.gitversioning\tools\Get-Version.ps1
         $nugetVer = $vers.Version
         
         # Update appxmanifest
         $doc = Get-Content ".\PackageExplorer.Package\package.appxmanifest"
         $doc | % { $_.Replace("3.25.0.0", "$nugetVer") } | Set-Content ".\PackageExplorer.Package\package.appxmanifest"
+        
+        # Update appxmanifest
+        $doc = Get-Content ".\PackageExplorer.Package.Nightly\package.appxmanifest"
+        $doc | % { $_.Replace("3.25.0.0", "$nugetVer") } | Set-Content ".\PackageExplorer.Package.Nightly\package.appxmanifest"
     
 build:
   project: NuGetPackageExplorer.sln
   verbosity: minimal
 after_build:
 - ps: |
-    $vers = & $env:UserProfile\.nuget\packages\nerdbank.gitversioning\2.1.11\tools\Get-Version.ps1
+    $vers = & $env:APPVEYOR_BUILD_FOLDER\packages\nerdbank.gitversioning\tools\Get-Version.ps1
     $nugetVer = $vers.NuGetPackageVersion
     choco pack PackageExplorer\NugetPackageExplorer.nuspec --version $nugetVer
 
@@ -37,5 +42,5 @@ after_build:
     Get-ChildItem .\*.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
 artifacts:
 - path: '**\NugetPackageExplorer*.nupkg'
-- path: '**\*.appxupload'
+- path: '**\*.appxbundle'
 deploy: off

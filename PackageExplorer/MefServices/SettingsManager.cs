@@ -84,7 +84,10 @@ namespace PackageExplorer
 
             if (string.IsNullOrEmpty(key))
             {
-                if (IsFirstTimeAfterUpdate && source.Equals(NuGetConstants.V2LegacyFeedUrl, StringComparison.OrdinalIgnoreCase))
+                if (IsFirstTimeAfterUpdate && (
+                    source.Equals(NuGetConstants.V2FeedUrl, StringComparison.OrdinalIgnoreCase) || 
+                    source.Equals(NuGetConstants.V2LegacyFeedUrl, StringComparison.OrdinalIgnoreCase)
+                ))
                 {
                     key = Settings.Default.PublishPrivateKey;
                 }
@@ -122,16 +125,23 @@ namespace PackageExplorer
                 Settings.Default.PublishAsUnlisted = value;
             }
         }
-        public bool UseApiKey
+
+        public string SigningCertificate
         {
-            get
-            {
-                return Settings.Default.UseApiKey;
-            }
-            set
-            {
-                Settings.Default.UseApiKey = value;
-            }
+            get => Settings.Default.SigningCertificate;
+            set => Settings.Default.SigningCertificate = value;
+        }
+
+        public string TimestampServer
+        {
+            get => Settings.Default.TimestampServer;
+            set => Settings.Default.TimestampServer = value;
+        }
+
+        public string SigningHashAlgorithmName
+        {
+            get => Settings.Default.SigningHashAlgorithmName;
+            set => Settings.Default.SigningHashAlgorithmName = value;
         }
 
         #endregion

@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace PackageExplorer.Resources {
+namespace PackageExplorer {
     using System;
     
     
@@ -39,7 +39,7 @@ namespace PackageExplorer.Resources {
         public static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("NuGetPackageExplorer.Resources", typeof(Resources).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("PackageExplorer.Resources", typeof(Resources).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -187,7 +187,7 @@ namespace PackageExplorer.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to All supported files|*.nupkg;*.nuspec|NuGet package file (*.nupkg)|*.nupkg|NuSpec file (*.nuspec)|*.nuspec.
+        ///   Looks up a localized string similar to All supported files|*.nupkg;*.snupkg;*.nuspec|NuGet package file (*.nupkg)|*.nupkg|NuGet Symbols package file (*.snupkg)|*.snupkg|NuSpec file (*.nuspec)|*.nuspec.
         /// </summary>
         public static string Dialog_OpenFileFilter {
             get {

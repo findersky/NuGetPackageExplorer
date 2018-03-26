@@ -1,5 +1,5 @@
 ﻿<?xml version='1.0' encoding='utf-8'?>
-<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="NuGetPackageExplorer.Properties" GeneratedClassName="Settings">
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="PackageExplorer.Properties" GeneratedClassName="Settings">
   <Profiles />
   <Settings>
     <Setting Name="FontSize" Type="System.Int32" Scope="User">
@@ -9,7 +9,7 @@
       <Value Profile="(Default)">400</Value>
     </Setting>
     <Setting Name="PackageSource" Type="System.String" Scope="User">
-      <Value Profile="(Default)">https://nuget.org/api/v2/</Value>
+      <Value Profile="(Default)">https://api.nuget.org/v3/index.json</Value>
     </Setting>
     <Setting Name="WindowPlacement" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
@@ -62,8 +62,14 @@
     <Setting Name="AutoLoadPackages" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>
-    <Setting Name="UseApiKey" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">True</Value>
+    <Setting Name="SigningCertificate" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="TimestampServer" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="SigningHashAlgorithmName" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
     </Setting>
   </Settings>
 </SettingsFile>

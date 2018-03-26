@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using System.Windows.Threading;
 
 namespace NuGetPackageExplorer.Types
@@ -21,8 +22,11 @@ namespace NuGetPackageExplorer.Types
 
         bool OpenRenameDialog(string currentName, string description, out string newName);
 
+        bool OpenCredentialsDialog(string target, out NetworkCredential networkCredential);
+
         bool OpenPublishDialog(object viewModel);
         bool OpenSignatureValidationDialog(object viewModel);
+        bool OpenSignPackageDialog(object viewModel, out string signedPackagePath);
         bool OpenFolderDialog(string title, string initialPath, out string selectedPath);
 
         bool Confirm(string title, string message);

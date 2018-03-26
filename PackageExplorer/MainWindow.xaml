@@ -1,4 +1,4 @@
-﻿<Window x:Class="PackageExplorer.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:self="clr-namespace:PackageExplorer" xmlns:viewmodel="clr-namespace:PackageExplorerViewModel;assembly=PackageViewModel" xmlns:resources="clr-namespace:PackageExplorer.Resources" xmlns:settings="clr-namespace:PackageExplorer.Properties" xmlns:PresentationOptions="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options" Title="{Binding WindowTitle, FallbackValue={x:Static resources:Resources.Dialog_Title}, Mode=OneWay, Converter={StaticResource StringShortenerConverter}, ConverterParameter=50}" Height="650" Width="750" MinWidth="600" MinHeight="300" Icon="Images/packageicon.png" FontSize="{Binding FontSize, Source={x:Static settings:Settings.Default}}" AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop" PreviewMouseWheel="Window_PreviewMouseWheel" Closing="Window_Closing" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+﻿<Window x:Class="PackageExplorer.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:self="clr-namespace:PackageExplorer" xmlns:viewmodel="clr-namespace:PackageExplorerViewModel;assembly=PackageViewModel" xmlns:settings="clr-namespace:PackageExplorer.Properties" xmlns:PresentationOptions="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options" Title="{Binding WindowTitle, FallbackValue={x:Static self:Resources.Dialog_Title}, Mode=OneWay, Converter={StaticResource StringShortenerConverter}, ConverterParameter=50}" Height="650" Width="750" MinWidth="600" MinHeight="300" Icon="Images/packageicon.png" FontSize="{Binding FontSize, Source={x:Static settings:Settings.Default}}" AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop" PreviewMouseWheel="Window_PreviewMouseWheel" Closing="Window_Closing" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
     <Window.Background>
         <ImageBrush PresentationOptions:Freeze="true" ImageSource="Images/background.png" Stretch="None" TileMode="Tile" Viewport="0,0,24,24" ViewportUnits="Absolute" />
     </Window.Background>
@@ -72,6 +72,7 @@
                 </self:GrayscaleMenuItem>
                 <MenuItem Header="Save _As..." Command="{Binding SaveCommand, FallbackValue={StaticResource DisabledCommand}}" CommandParameter="SaveAs" InputGestureText="Ctrl+Shift+S"/>
                 <MenuItem Header="Save _Metadata As..." Command="{Binding SaveCommand, FallbackValue={StaticResource DisabledCommand}}" CommandParameter="SaveMetadataAs" />
+                <MenuItem Header="Sign and Save As..." Command="{Binding SaveCommand, FallbackValue={StaticResource DisabledCommand}}" CommandParameter="SignAndSaveAs" />
                 <Separator />
                 <MenuItem Header="Expor_t..." Command="{Binding ExportCommand, FallbackValue={StaticResource DisabledCommand}}" />
                 <self:GrayscaleMenuItem Command="{Binding PublishCommand, FallbackValue={StaticResource DisabledCommand}}" Header="_Publish..." InputGestureText="Ctrl+P">
@@ -94,7 +95,7 @@
                     <MenuItem.ItemContainerStyle>
                         <Style TargetType="{x:Type MenuItem}">
                             <EventSetter Event="Click" Handler="RecentFileMenuItem_Click" />
-                            <Setter Property="Header" Value="{Binding Path, Converter={StaticResource TruncatePathConverter}}" />
+                            <Setter Property="Header" Value="{Binding ., Converter={StaticResource TruncatePathConverter}}" />
                             <Setter Property="ToolTip" Value="{Binding Path}" />
                         </Style>
                     </MenuItem.ItemContainerStyle>
@@ -217,12 +218,12 @@
 
                         <MenuItem Header="_Analyze Package" InputGestureText="Ctrl+Q" Command="{Binding ViewPackageAnalysisCommand}" Visibility="{Binding Mode=OneWay, Converter={StaticResource NullToVisibilityConverter}}" />
                         <Separator Visibility="{Binding Mode=OneWay, Converter={StaticResource NullToVisibilityConverter}}" />
-                        <MenuItem Header="_Plugin Manager..." Click="AddPluginFromAssembly_Click">
+                        <MenuItem Header="_Plugin Manager..." Click="AddPluginFromAssembly_Click" x:Name="pluginMenuItem">
                             <MenuItem.Icon>
                                 <Image Source="images/cog.png" />
                             </MenuItem.Icon>
                         </MenuItem>
-                        <Separator />
+                        <Separator x:Name="mnuPluginSep" />
                         <MenuItem Header="Vi_ew NuGet download cache" Click="ViewDownloadCache_Click" />
                         <MenuItem Header="Clea_r NuGet download cache" Click="ClearDownloadCache_Click" />
                     </CompositeCollection>

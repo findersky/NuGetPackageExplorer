@@ -1,57 +1,79 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data.Services.Client;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using NuGetPe;
+using NuGet.Common;
+using NuGet.Protocol;
+using NuGet.Protocol.Core.Types;
 
 namespace PackageExplorerViewModel
 {
-    internal class ShowLatestVersionQueryContext<T> : QueryContextBase<T>, IQueryContext<T> where T : IPackageInfoType
+    internal class ShowLatestVersionQueryContext<T> : IQueryContext<T> where T : IPackageSearchMetadata
     {
+        private readonly SourceRepository _sourceRepository;
+        private readonly string _searchText;
+        private readonly SearchFilter _searchFilter;
         private readonly int _pageSize;
+        private PackageSearchResource _packageSearchResouce;
+        private RawSearchResourceV3 _rawPackageSearchResouce;
         private int _pageIndex;
+        private int? _lastPageIndex;
+        private int? _lastPageCount;
 
-        public ShowLatestVersionQueryContext(IQueryable<T> source, int pageSize) 
-            : base(source)
+        public ShowLatestVersionQueryContext(SourceRepository sourceRepository, string search, bool showPreReleasePackages, int pageSize)
         {
+            _sourceRepository = sourceRepository;
+            _searchText = search;
+            _searchFilter = new SearchFilter(showPreReleasePackages);
             _pageSize = pageSize;
-        }
-
-        private int PageCount
-        {
-            get { return (TotalItemCount + (_pageSize - 1)) / _pageSize; }
         }
 
         #region IQueryContext<T> Members
 
-        public int BeginPackage
-        {
-            get { return Math.Min(TotalItemCount, _pageIndex * _pageSize + 1); }
-        }
+        public int CurrentPage => _pageIndex;
 
-        public int EndPackage
-        {
-            get { return Math.Min(TotalItemCount, (_pageIndex + 1) * _pageSize); }
-        }
+        public int BeginPackage => _pageIndex * _pageSize + (_lastPageIndex == 0 && _lastPageCount == 0 ? 0 : 1);
+
+        public int EndPackage => _pageIndex * _pageSize + (IsLastPage ? _lastPageCount.Value : _pageSize);
+
+        public bool IsLastPage => _pageIndex == _lastPageIndex;
 
         public async Task<IList<T>> GetItemsForCurrentPage(CancellationToken token)
         {
-            var pagedQuery = Source.Skip(_pageIndex * _pageSize).Take(_pageSize);
-            var queryResponse = (await LoadData(pagedQuery)).ToArray();
+            IEnumerable<IPackageSearchMetadata> result = null;
 
-            token.ThrowIfCancellationRequested();
-
-            foreach (var package in queryResponse)
+            if (_packageSearchResouce == null && _rawPackageSearchResouce == null)
             {
-                package.ShowAll = false;
+                _rawPackageSearchResouce = await _sourceRepository.GetResourceAsync<RawSearchResourceV3>(token);
+            }
+            if (_rawPackageSearchResouce != null)
+            {
+                var json = await _rawPackageSearchResouce.Search(_searchText, _searchFilter, _pageIndex * _pageSize, _pageSize, NullLogger.Instance, token);
+
+                result = json.Select(s => s.FromJToken<PackageSearchMetadata>());
+            }
+
+            if (result == null)
+            {
+                if (_packageSearchResouce == null)
+                {
+                    _packageSearchResouce = await _sourceRepository.GetResourceAsync<PackageSearchResource>(token);
+                }
+
+                result = await _packageSearchResouce.SearchAsync(_searchText, _searchFilter, _pageIndex * _pageSize, _pageSize, NullLogger.Instance, token);
             }
 
             token.ThrowIfCancellationRequested();
 
-            return queryResponse;
+            var list = result.Cast<T>().ToList();
+
+            if (list.Count < _pageSize)
+            {
+                _lastPageIndex = _pageIndex;
+                _lastPageCount = list.Count;
+            }
+
+            return list;
         }
 
         public bool MoveFirst()
@@ -62,12 +84,11 @@ namespace PackageExplorerViewModel
 
         public bool MoveNext()
         {
-            if (_pageIndex < PageCount - 1)
+            if (!_lastPageIndex.HasValue || _pageIndex < _lastPageIndex)
             {
                 _pageIndex++;
                 return true;
             }
-
             return false;
         }
 
@@ -79,12 +100,6 @@ namespace PackageExplorerViewModel
                 return true;
             }
             return false;
-        }
-
-        public bool MoveLast()
-        {
-            _pageIndex = PageCount - 1;
-            return true;
         }
 
         #endregion

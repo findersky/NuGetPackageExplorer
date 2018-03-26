@@ -2,7 +2,7 @@
 using System.ComponentModel.Composition;
 using System.Globalization;
 using System.IO;
-using System.Threading.Tasks;
+using System.Net;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -143,7 +143,7 @@ namespace PackageExplorer
             MessageBox.Show(
                 Window.Value,
                 message,
-                Resources.Resources.Dialog_Title,
+                Resources.Dialog_Title,
                 MessageBoxButton.OK,
                 image);
         }
@@ -204,6 +204,24 @@ namespace PackageExplorer
             return result ?? false;
         }
 
+        public bool OpenSignPackageDialog(object viewModel, out string signedPackagePath)
+        {
+            var dialog = new SignPackageDialog
+            {
+                Owner = Window.Value,
+                DataContext = viewModel
+            };
+
+            if (viewModel is IDisposable disposable)
+            {
+                dialog.Closed += OnDialogClosed;
+            }
+
+            var result = dialog.ShowDialog();
+            signedPackagePath = dialog.SignedPackagePath;
+            return result ?? false;
+        }
+
         private void OnDialogClosed(object sender, EventArgs e)
         {
             var window = (Window)sender;
@@ -251,7 +269,7 @@ namespace PackageExplorer
 
             var mainInstruction = string.Format(
                 CultureInfo.CurrentCulture,
-                Resources.Resources.MoveContentFileToFolder,
+                Resources.MoveContentFileToFolder,
                 fileName,
                 targetFolder);
 
@@ -262,7 +280,7 @@ namespace PackageExplorer
         {
             using (var dialog = new TaskDialog())
             {
-                dialog.WindowTitle = Resources.Resources.Dialog_Title;
+                dialog.WindowTitle = Resources.Dialog_Title;
                 dialog.MainInstruction = "Great! You are running on Windows 8";
                 dialog.Content = "There is also a Windows Store app of NuGet Package Explorer that is designed to be touch friendly, fast and fluid. Do you want to install it now?";
                 dialog.AllowDialogCancellation = true;
@@ -309,7 +327,7 @@ namespace PackageExplorer
         {
             using (var dialog = new TaskDialog())
             {
-                dialog.WindowTitle = Resources.Resources.Dialog_Title;
+                dialog.WindowTitle = Resources.Dialog_Title;
                 dialog.MainInstruction = title;
                 dialog.Content = message;
                 dialog.AllowDialogCancellation = true;
@@ -335,7 +353,7 @@ namespace PackageExplorer
         {
             using (var dialog = new TaskDialog())
             {
-                dialog.WindowTitle = Resources.Resources.Dialog_Title;
+                dialog.WindowTitle = Resources.Dialog_Title;
                 dialog.MainInstruction = title;
                 dialog.AllowDialogCancellation = true;
                 dialog.Content = message;
@@ -370,14 +388,14 @@ namespace PackageExplorer
         {
             var content = string.Format(
                 CultureInfo.CurrentCulture,
-                Resources.Resources.MoveContentFileToFolderExplanation,
+                Resources.MoveContentFileToFolderExplanation,
                 targetFolder);
 
             var dialog = new TaskDialog
                          {
                              MainInstruction = mainInstruction,
                              Content = content,
-                             WindowTitle = Resources.Resources.Dialog_Title,
+                             WindowTitle = Resources.Dialog_Title,
                              ButtonStyle = TaskDialogButtonStyle.CommandLinks
                          };
 
@@ -430,7 +448,7 @@ namespace PackageExplorer
         {
             using (var dialog = new TaskDialog())
             {
-                dialog.WindowTitle = Resources.Resources.Dialog_Title;
+                dialog.WindowTitle = Resources.Dialog_Title;
                 dialog.MainInstruction = title;
                 dialog.Content = message;
                 dialog.AllowDialogCancellation = false;
@@ -473,6 +491,26 @@ namespace PackageExplorer
             else
             {
                 portableFramework = null;
+                return false;
+            }
+        }
+
+        public bool OpenCredentialsDialog(string target, out NetworkCredential networkCredential)
+        {
+            using (var dialog = new CredentialDialog())
+            {
+                dialog.WindowTitle = Resources.Dialog_Title;
+                dialog.MainInstruction = "Credentials for " + target;
+                dialog.Content = "Enter Personal Access Tokens in the username field.";
+                dialog.Target = target;
+
+                if (dialog.ShowDialog())
+                {
+                    networkCredential = dialog.Credentials;
+                    return true;
+                }
+
+                networkCredential = null;
                 return false;
             }
         }

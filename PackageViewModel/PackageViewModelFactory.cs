@@ -5,7 +5,6 @@ using System.ComponentModel.Composition;
 using System.Diagnostics.CodeAnalysis;
 using NuGetPe;
 using NuGetPackageExplorer.Types;
-using PackageExplorerViewModel.Types;
 using System.Threading.Tasks;
 
 namespace PackageExplorerViewModel
@@ -33,6 +32,9 @@ namespace PackageExplorerViewModel
         [Import]
         public ISettingsManager SettingsManager { get; set; }
 
+        [Import]
+        public CredentialPublishProvider CredentialPublishProvider { get; set; }
+
         [Import(typeof(IPluginManager))]
         public IPluginManager PluginManager { get; set; }
 
@@ -41,9 +43,6 @@ namespace PackageExplorerViewModel
 
         [Import(typeof(INuGetPackageDownloader))]
         public INuGetPackageDownloader PackageDownloader { get; set; }
-
-		[Import(typeof(ICredentialManager))]
-		public ICredentialManager CredentialManager { get; set; }
 
 		[SuppressMessage("Microsoft.Design", "CA1002:DoNotExposeGenericLists"),
          SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly"),
@@ -74,6 +73,7 @@ namespace PackageExplorerViewModel
                 UIServices,
                 EditorService.Value,
                 SettingsManager,
+                CredentialPublishProvider,
                 ContentViewerMetadata,
                 PackageRules);
         }
@@ -82,7 +82,6 @@ namespace PackageExplorerViewModel
         {
             var model = new PackageChooserViewModel(
                 new MruPackageSourceManager(new PackageSourceSettings(SettingsManager)),
-				CredentialManager,
                 SettingsManager.ShowPrereleasePackages,
                 SettingsManager.AutoLoadPackages,
                 fixedPackageSource);

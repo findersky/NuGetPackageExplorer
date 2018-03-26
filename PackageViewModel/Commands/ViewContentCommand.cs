@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows.Input;
 using NuGetPackageExplorer.Types;
+using NuGetPe;
 
 namespace PackageExplorerViewModel
 {
@@ -46,7 +47,15 @@ namespace PackageExplorerViewModel
             {
                 if ((parameter ?? ViewModel.SelectedItem) is PackageFile file)
                 {
-                    ShowFile(file);
+                    try
+                    {
+                        ShowFile(file);
+                    }
+                    catch (Exception e)
+                    {
+                        ViewModel.UIServices.Show(e.Message, MessageLevel.Error);
+                    }
+                    
                 }
             }
         }
@@ -139,11 +148,14 @@ namespace PackageExplorerViewModel
         private IEnumerable<IPackageContentViewer> FindContentViewer(PackageFile file)
         {
             var extension = Path.GetExtension(file.Name);
+            
             return from p in ViewModel.ContentViewerMetadata
+                   where AppCompat.IsWindows10S ? p.Metadata.SupportsWindows10S : true // Filter out incompatible addins on 10s
                    where p.Metadata.SupportedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase)
                    orderby p.Metadata.Priority
                    select p.Value;
         }
+
 
         private static string ReadFileContent(PackageFile file, out long size)
         {

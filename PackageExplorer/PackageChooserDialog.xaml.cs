@@ -26,18 +26,9 @@ namespace PackageExplorer
 
             _viewModel = viewModel;
             _viewModel.LoadPackagesCompleted += OnLoadPackagesCompleted;
-            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.OpenPackageRequested += OnOpenPackageRequested;
 
             DataContext = _viewModel;
-        }
-
-        private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == "SortDirection")
-            {
-                RedrawSortGlyph(_viewModel.SortColumn, _viewModel.SortDirection);
-            }
         }
 
         private void OnLoadPackagesCompleted(object sender, EventArgs e)
@@ -135,7 +126,7 @@ namespace PackageExplorer
                 if (SearchBox.Template.FindName("PART_ContentHost", SearchBox) is FrameworkElement contentHost)
                 {
                     contentHost.Margin = new Thickness(0, 0, 40, 0);
-                    contentHost.Width = 160;
+                    contentHost.Width = 360;
                 }
             }
         }
@@ -229,16 +220,6 @@ namespace PackageExplorer
                     InvokeSearch(_pendingSearch);
                 }
             }
-        }
-
-        private void PackageGrid_Sorting(object sender, DataGridSortingEventArgs e)
-        {
-            if (_viewModel.SortCommand.CanExecute(e.Column.SortMemberPath))
-            {
-                _viewModel.SortCommand.Execute(e.Column.SortMemberPath);
-            }
-
-            e.Handled = true;
         }
 
         private void OnPackageDoubleClick(object sender, RoutedEventArgs e)
