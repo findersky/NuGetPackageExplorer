@@ -1,22 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <!-- workaround for https://github.com/NuGet/Home/issues/5894 -->
-  <PropertyGroup>
-    <_SdkLanguageName>CSharp</_SdkLanguageName>
-  </PropertyGroup>
-  <Import Project="obj\*.props" Condition=" '$(MSBuildProjectExtension)' == '.tmp_proj'" />
+﻿<Project Sdk="MSBuild.Sdk.Extras">
 
   <PropertyGroup>
-    <TargetFramework>net461</TargetFramework>
+    <TargetFramework>net462</TargetFramework>
     <OutputType>WinExe</OutputType>
     <AssemblyName>NuGetPackageExplorer</AssemblyName>
     <ApplicationIcon>nupack.ico</ApplicationIcon>
-    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
     <Title>NuGet Package Explorer</Title>
     <Description>This is a NuGet package explorer tool which lets you view the metadata of a .nupkg package. After installing it, you can double click on .nupkg packages to open them in Package Explorer.</Description>
-    <EmbeddedResourceGeneratorVisibilityIsInternal>false</EmbeddedResourceGeneratorVisibilityIsInternal>
+    <ExtrasEmbeddedResourceGeneratedCodeIsPublic>true</ExtrasEmbeddedResourceGeneratedCodeIsPublic>
     <RootNamespace>PackageExplorer</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x86</Platforms>
+    <NgenR2R>true</NgenR2R>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Ookii.Dialogs.Wpf, Version=1.0.0.0, Culture=neutral, PublicKeyToken=0c15020868fd6249, processorArchitecture=MSIL" SpecificVersion="false" HintPath="..\lib\Ookii.Dialogs.Wpf.dll" />
@@ -25,13 +20,13 @@
     <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime.Caching" />    
-
-    <PackageReference Include="MSBuild.Sdk.Extras" Version="1.3.1" />
+    
     <PackageReference Include="AvalonEdit" Version="5.0.4" />
     <PackageReference Include="GrayscaleEffect" Version="1.0.1" />
     <PackageReference Include="Humanizer" Version="2.2.0" />
-    <PackageReference Include="System.Memory" Version="4.5.0-preview2-26406-04" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.0-preview2-26406-04" />    
+    <PackageReference Include="System.Memory" Version="4.5.0" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.0" />    
+    <PackageReference Include="Microsoft.DotNet.Framework.NativeImageCompiler" Version="0.0.1-prerelease-00002" PrivateAssets="All" />    
 
     <ProjectReference Include="..\PackageViewModel\PackageViewModel.csproj" />
   </ItemGroup>
@@ -47,23 +42,5 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Resource>
   </ItemGroup>
-
-  <ItemGroup>
-    <Compile Update="Resources.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Resources.resx</DependentUpon>
-    </Compile>
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Update="Resources.resx">
-      <Generator>PublicResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-  </ItemGroup>
-
-  <Import Project="$(MSBuildSDKExtrasTargets)" Condition="Exists('$(MSBuildSDKExtrasTargets)')" />
-  <!-- workaround for https://github.com/NuGet/Home/issues/5894 -->
-  <Import Project="obj\*.targets" Condition=" '$(MSBuildProjectExtension)' == '.tmp_proj'" />
+  
 </Project>
