@@ -7,7 +7,7 @@ namespace PackageExplorer
 {
     public class NumberToStringConverter : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is int i)
             {
@@ -19,7 +19,7 @@ namespace PackageExplorer
             }
             if (value != null)
             {
-                var number = double.Parse(value.ToString(), culture);
+                var number = double.Parse(value.ToString()!, culture);
                 return number.ToMetric(decimals: 1);
             }
 

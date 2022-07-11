@@ -8,7 +8,7 @@ namespace PackageExplorerViewModel
 {
     public class EditablePackageDependencySet : INotifyPropertyChanged
     {
-        private NuGetFramework _targetFramework;
+        private NuGetFramework? _targetFramework;
 
         public EditablePackageDependencySet()
         {
@@ -17,11 +17,13 @@ namespace PackageExplorerViewModel
 
         public EditablePackageDependencySet(PackageDependencyGroup packageDependencySet)
         {
+            if (packageDependencySet is null)
+                throw new System.ArgumentNullException(nameof(packageDependencySet));
             _targetFramework = packageDependencySet.TargetFramework;
             Dependencies = new ObservableCollection<PackageDependency>(packageDependencySet.Packages);
         }
 
-        public NuGetFramework TargetFramework
+        public NuGetFramework? TargetFramework
         {
             get
             {
@@ -32,7 +34,7 @@ namespace PackageExplorerViewModel
                 if (_targetFramework != value)
                 {
                     _targetFramework = value;
-                    OnPropertyChange("TargetFramework");
+                    OnPropertyChange(nameof(TargetFramework));
                 }
             }
         }
@@ -47,7 +49,7 @@ namespace PackageExplorerViewModel
             return new PackageDependencyGroup(TargetFramework ?? NuGetFramework.AnyFramework, Dependencies);
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
 
         private void OnPropertyChange(string propertyName)
         {

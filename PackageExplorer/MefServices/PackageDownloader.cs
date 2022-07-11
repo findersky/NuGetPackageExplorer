@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.ComponentModel.Composition;
 using System.Globalization;
 using System.IO;
@@ -6,29 +7,44 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Threading;
 using NuGet.Common;
 using NuGet.Configuration;
 using NuGet.Packaging.Core;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
+
 using NuGetPackageExplorer.Types;
 using NuGetPe;
-using Ookii.Dialogs.Wpf;
+
 using PackageExplorerViewModel;
+
+#if !HAS_UNO
+using Ookii.Dialogs.Wpf;
+#endif
+
+#if __WASM__
+using NupkgExplorer.Client;
+#endif
 
 namespace PackageExplorer
 {
     [Export(typeof(INuGetPackageDownloader))]
     internal class PackageDownloader : INuGetPackageDownloader
     {
-        private static readonly FileSizeConverter FileSizeConverter = new FileSizeConverter();
+        private static readonly FileSizeConverter FileSizeConverter = new();
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         [Import]
         public Lazy<MainWindow> MainWindow { get; set; }
 
         [Import]
         public IUIServices UIServices { get; set; }
+
+#if __WASM__
+        [Import]
+        public INugetEndpoint NugetEndpoint { get; set; }
+#endif
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
 
         #region IPackageDownloader Members
 
@@ -41,7 +57,7 @@ namespace PackageExplorer
             }
         }
 
-        public async Task<ISignaturePackage> Download(SourceRepository sourceRepository, PackageIdentity packageIdentity)
+        public async Task<ISignaturePackage?> Download(SourceRepository sourceRepository, PackageIdentity packageIdentity)
         {
             var tempFilePath = await DownloadWithProgress(sourceRepository, packageIdentity);
             try
@@ -50,14 +66,48 @@ namespace PackageExplorer
             }
             catch (Exception e)
             {
+                // Don't send telemetry error for bad package
+                if (!(e is InvalidDataException))
+                {
+                    DiagnosticsClient.TrackException(e);
+                }
+
                 UIServices.Show(e.Message, MessageLevel.Error);
                 return null;
             }
 
         }
 
-        private async Task<string> DownloadWithProgress(SourceRepository sourceRepository, PackageIdentity packageIdentity)
+        private Task<string?> DownloadWithProgress(SourceRepository sourceRepository, PackageIdentity packageIdentity)
         {
+#if __WASM__
+            // FIXME#14: we are bypassing the entire implementation, because DownloadResource could not be created on WASM (but works skia)
+            return NugetEndpoint
+                .DownloadPackage(packageIdentity.Id, packageIdentity.Version.OriginalVersion)
+                .ContinueWith(x =>
+                {
+                    var path = $"./tmp/{Guid.NewGuid()}.nupkg";
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    using (var file = File.OpenWrite(path))
+                    {
+                        x.Result.CopyTo(file);
+                    }
+
+                    return path;
+                });
+#endif
+
+#if HAS_UNO
+            string? description = null;
+            int? percent = null;
+            var updated = 0;
+
+            var tcs = new TaskCompletionSource<string?>();
+            var cts = new CancellationTokenSource();
+
+            // TODO: progress/error reporting & cancellation
+            DoWorkAsync().ContinueWith(x => tcs.TrySetResult(x.Result));
+#else
             var progressDialogText = Resources.Dialog_DownloadingPackage;
             if (packageIdentity.HasVersion)
             {
@@ -68,11 +118,12 @@ namespace PackageExplorer
                 progressDialogText = string.Format(CultureInfo.CurrentCulture, progressDialogText, packageIdentity.Id, string.Empty);
             }
 
-            string description = null;
+            string? description = null;
             int? percent = null;
-            var updated = false;
+            var updated = 0;
 
             var progressDialogLock = new object();
+#pragma warning disable CA2000 // Dispose objects before losing scope (handled in finally below)
             var progressDialog = new ProgressDialog
             {
                 Text = progressDialogText,
@@ -83,12 +134,12 @@ namespace PackageExplorer
 
             // polling for Cancel button being clicked
             var cts = new CancellationTokenSource();
-            var timer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(200)
-            };
+            var timer = new System.Timers.Timer(100);
+            var tcs = new TaskCompletionSource<string?>();
 
-            timer.Tick += (o, e) =>
+#pragma warning restore CA2000 // Dispose objects before losing scope
+
+            timer.Elapsed += (o, e) =>
                           {
                               lock (progressDialogLock)
                               {
@@ -97,87 +148,104 @@ namespace PackageExplorer
                                       timer.Stop();
                                       cts.Cancel();
                                   }
-                                  else if (updated)
+                                  else if (Interlocked.CompareExchange(ref updated, 0, 1) == 1)
                                   {
-                                      if (!progressDialog.IsOpen)
-                                      {
-                                          progressDialog.ProgressBarStyle = percent.HasValue ? ProgressBarStyle.ProgressBar : ProgressBarStyle.MarqueeProgressBar;
-                                          progressDialog.ShowDialog(MainWindow.Value);
-                                      }
                                       progressDialog.ReportProgress(percent.GetValueOrDefault(), null, description);
-                                      updated = false;
                                   }
                               }
                           };
-            timer.Start();
 
-            try
+
+            progressDialog.DoWork += (object? sender, DoWorkEventArgs args) =>
             {
-                var httpProgressProvider = new ProgressHttpHandlerResourceV3Provider(OnProgress);
-                var additionalProviders = new[] { new Lazy<INuGetResourceProvider>(() => httpProgressProvider) };
+                var t = DoWorkAsync();
+                t.Wait(cts.Token);
+                tcs.TrySetResult(t.Result);
+            };
+            progressDialog.RunWorkerCompleted += (object? sender, RunWorkerCompletedEventArgs args) =>
+            {
+                MainWindow.Value.Activate();
+            };
 
-                var repository = PackageRepositoryFactory.CreateRepository(sourceRepository.PackageSource, additionalProviders);
-                var downloadResource = await repository.GetResourceAsync<DownloadResource>(cts.Token);
+            progressDialog.ShowDialog(MainWindow.Value);
 
-                using (var sourceCacheContext = new SourceCacheContext() { NoCache = true })
+            timer.Start();
+#endif
+
+
+            async Task<string?> DoWorkAsync()
+            {
+                try
                 {
+                    var httpProgressProvider = new ProgressHttpHandlerResourceV3Provider(OnProgress);
+                    var repository = PackageRepositoryFactory.CreateRepository(sourceRepository.PackageSource, new[] { new Lazy<INuGetResourceProvider>(() => httpProgressProvider) });
+                    var downloadResource = await repository.GetResourceAsync<DownloadResource>(cts!.Token).ConfigureAwait(false);
+
+                    using var sourceCacheContext = new SourceCacheContext() { NoCache = true };
                     var context = new PackageDownloadContext(sourceCacheContext, Path.GetTempPath(), true);
 
-                    using (var result = await downloadResource.GetDownloadResourceResultAsync(packageIdentity, context, string.Empty, NullLogger.Instance, cts.Token))
+                    using var result = await downloadResource.GetDownloadResourceResultAsync(packageIdentity, context, string.Empty, NullLogger.Instance, cts.Token).ConfigureAwait(false);
+                    if (result.Status == DownloadResourceResultStatus.Cancelled)
+                        throw new OperationCanceledException();
+
+                    if (result.Status == DownloadResourceResultStatus.NotFound)
+                        throw new PackageNotFoundException($"Package '{packageIdentity.Id} {packageIdentity.Version}' not found");
+
+                    var tempFilePath = Path.GetTempFileName();
+                    using (var fileStream = File.OpenWrite(tempFilePath))
                     {
-                        if (result.Status == DownloadResourceResultStatus.Cancelled)
-                        {
-                            throw new OperationCanceledException();
-                        }
-                        if (result.Status == DownloadResourceResultStatus.NotFound)
-                        {
-                            throw new Exception(string.Format("Package '{0} {1}' not found", packageIdentity.Id, packageIdentity.Version));
-                        }
-
-                        var tempFilePath = Path.GetTempFileName();
-
-                        using (var fileStream = File.OpenWrite(tempFilePath))
-                        {
-                            await result.PackageStream.CopyToAsync(fileStream);
-                        }
-
-                        return tempFilePath;
+                        await result.PackageStream.CopyToAsync(fileStream).ConfigureAwait(false);
                     }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                return null;
-            }
-            catch (Exception exception)
-            {
-                OnError(exception);
-                return null;
-            }
-            finally
-            {
-                timer.Stop();
 
-                // close progress dialog when done
-                lock (progressDialogLock)
+                    return tempFilePath;
+                }
+#if !HAS_UNO
+                catch (OperationCanceledException)
                 {
-                    progressDialog.Close();
-                    progressDialog = null;
+                    return null;
                 }
+                catch (Exception exception)
+                {
+                    OnError(exception);
+                    return null;
+                }
+#endif
+                finally
+                {
+#if HAS_UNO
+                    cts!.Dispose();
+#else
+                    timer!.Stop();
+                    timer.Dispose();
+                    cts!.Dispose();
 
-                MainWindow.Value.Activate();
+                    // close progress dialog when done
+                    lock (progressDialogLock!)
+                    {
+                        progressDialog!.Dispose();
+                    }
+#endif
+                }
             }
+
 
             void OnProgress(long bytesReceived, long? totalBytes)
             {
+#if HAS_UNO
+                var currentCulture = CultureInfo.CurrentCulture.ToString();
+#else
+                var currentCulture = CultureInfo.CurrentCulture;
+#endif
+
                 if (totalBytes.HasValue)
                 {
-                    percent = (int)((bytesReceived * 100L) / totalBytes);
+                    // TODO: remove ! once https://github.com/dotnet/roslyn/issues/33330 is fixed
+                    percent = (int)((bytesReceived * 100L) / totalBytes)!;
                     description = string.Format(
                        CultureInfo.CurrentCulture,
                        "Downloaded {0} of {1}...",
-                       FileSizeConverter.Convert(bytesReceived, typeof(string), null, CultureInfo.CurrentCulture),
-                       FileSizeConverter.Convert(totalBytes.Value, typeof(string), null, CultureInfo.CurrentCulture));
+                       FileSizeConverter.Convert(bytesReceived, typeof(string), null, currentCulture),
+                       FileSizeConverter.Convert(totalBytes.Value, typeof(string), null, currentCulture));
                 }
                 else
                 {
@@ -185,13 +253,15 @@ namespace PackageExplorer
                     description = string.Format(
                         CultureInfo.CurrentCulture,
                         "Downloaded {0}...",
-                        FileSizeConverter.Convert(bytesReceived, typeof(string), null, CultureInfo.CurrentCulture));
+                        FileSizeConverter.Convert(bytesReceived, typeof(string), null, currentCulture));
                 }
-                updated = true;
+                Interlocked.Exchange(ref updated, 1);
             }
+
+            return tcs.Task;
         }
 
-        #endregion
+#endregion
 
         private void OnError(Exception error)
         {
@@ -213,10 +283,10 @@ namespace PackageExplorer
         {
             var response = await base.SendAsync(request, cancellationToken);
 
-            if (IsBinaryMediaType(response.Content.Headers.ContentType?.MediaType))
+            if (IsBinaryMediaType(response.Content?.Headers.ContentType?.MediaType))
             {
-                var totalSize = response.Content.Headers.ContentLength;
-                var innerStream = await response.Content.ReadAsStreamAsync();
+                var totalSize = response.Content!.Headers.ContentLength;
+                var innerStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
                 response.Content = new StreamContent(new ProgressStream(innerStream, size => _progressAction(size, totalSize)));
             }
@@ -224,11 +294,23 @@ namespace PackageExplorer
             return response;
         }
 
-        private static bool IsBinaryMediaType(string mediaType)
+        private static bool IsBinaryMediaType(string? mediaType)
         {
             return mediaType == "application/octet-stream" || // NuGet Protocol v3
                 mediaType == "binary/octet-stream"; // NuGet Protocol v2
         }
+    }
+
+
+    [Serializable]
+    public class PackageNotFoundException : Exception
+    {
+        public PackageNotFoundException() { }
+        public PackageNotFoundException(string message) : base(message) { }
+        public PackageNotFoundException(string message, Exception inner) : base(message, inner) { }
+        protected PackageNotFoundException(
+          System.Runtime.Serialization.SerializationInfo info,
+          System.Runtime.Serialization.StreamingContext context) : base(info, context) { }
     }
 
     internal class ProgressStream : Stream
@@ -270,6 +352,34 @@ namespace PackageExplorer
             return result;
         }
 
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var result = await _inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
+
+            if (result > 0)
+            {
+                _length += result;
+
+                _progress(_length);
+            }
+
+            return result;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var result = await _inner.ReadAsync(buffer, cancellationToken);
+
+            if (result > 0)
+            {
+                _length += result;
+
+                _progress(_length);
+            }
+
+            return result;
+        }
+
         public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
 
         public override void SetLength(long value) => _inner.SetLength(value);
@@ -300,18 +410,19 @@ namespace PackageExplorer
             _progressAction = progressAction;
         }
 
-        public override Task<Tuple<bool, INuGetResource>> TryCreate(SourceRepository source, CancellationToken token)
+        public override Task<Tuple<bool, INuGetResource?>> TryCreate(SourceRepository source, CancellationToken token)
         {
-            HttpHandlerResourceV3 curResource = null;
+            HttpHandlerResourceV3? curResource = null;
 
             if (source.PackageSource.IsHttp)
             {
                 curResource = CreateResource(source.PackageSource);
             }
 
-            return Task.FromResult(new Tuple<bool, INuGetResource>(curResource != null, curResource));
+            return Task.FromResult(new Tuple<bool, INuGetResource?>(curResource != null, curResource));
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private HttpHandlerResourceV3 CreateResource(PackageSource packageSource)
         {
             var sourceUri = packageSource.SourceUri;
@@ -320,8 +431,10 @@ namespace PackageExplorer
             // replace the handler with the proxy aware handler
             var clientHandler = new HttpClientHandler
             {
+#if !HAS_UNO
                 Proxy = proxy,
                 AutomaticDecompression = (DecompressionMethods.GZip | DecompressionMethods.Deflate)
+#endif
             };
 
             // HTTP handler pipeline can be injected here, around the client handler
@@ -333,13 +446,15 @@ namespace PackageExplorer
             }
 
             {
-                var innerHandler = messageHandler;
+                //var innerHandler = messageHandler;
 
-                messageHandler = new StsAuthenticationHandler(packageSource, TokenStore.Instance)
-                {
-                    InnerHandler = innerHandler
-                };
+                // TODO: Investigate what changed in this type
+                //    messageHandler = new StsAuthenticationHandler(packageSource, TokenStore.Instance)
+                //    {
+                //        InnerHandler = innerHandler
+                //    };
             }
+#if !__WASM__ // HttpSourceAuthenticationHandler will no matter how set the credentials which isnt supported on wasm
             {
                 var innerHandler = messageHandler;
 
@@ -348,6 +463,7 @@ namespace PackageExplorer
                     InnerHandler = innerHandler
                 };
             }
+#endif
 
             var resource = new HttpHandlerResourceV3(clientHandler, messageHandler);
 

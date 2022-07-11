@@ -6,6 +6,7 @@ using NuGet.Common;
 using NuGet.Packaging;
 using NuGet.Protocol.Core.Types;
 using NuGetPackageExplorer.Types;
+using NuGetPe;
 
 namespace PackageExplorerViewModel
 {
@@ -13,35 +14,40 @@ namespace PackageExplorerViewModel
     {
         private readonly MruPackageSourceManager _mruSourceManager;
         private readonly IPackageMetadata _package;
-        private readonly string _packageFilePath;
+        private readonly string? _packageFilePath;
         private readonly ISettingsManager _settingsManager;
+        private readonly IUIServices _uiServices;
         private readonly CredentialPublishProvider _credentialPublishProvider;
         private bool _canPublish = true;
         private bool _hasError;
-        private string _publishKeyOrPAT;
+        private string? _publishKeyOrPAT;
         private bool? _publishAsUnlisted = true;
         private bool? _appendV2ApiToUrl = true;
-        private string _selectedPublishItem;
+        private string? _selectedPublishItem;
         private bool _showProgress;
-        private string _status;
+        private string? _status;
         private bool _suppressReadingApiKey;
 
         public PublishPackageViewModel(
             MruPackageSourceManager mruSourceManager,
             ISettingsManager settingsManager,
+            IUIServices uiServices,
             CredentialPublishProvider credentialPublishProvider,
             PackageViewModel viewModel)
         {
-            _mruSourceManager = mruSourceManager;
-            _settingsManager = settingsManager;
-            _credentialPublishProvider = credentialPublishProvider;
+            if (viewModel is null)
+                throw new ArgumentNullException(nameof(viewModel));
+            _mruSourceManager = mruSourceManager ?? throw new ArgumentNullException(nameof(mruSourceManager));
+            _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            _uiServices = uiServices ?? throw new ArgumentNullException(nameof(uiServices));
+            _credentialPublishProvider = credentialPublishProvider ?? throw new ArgumentNullException(nameof(credentialPublishProvider));
             _package = viewModel.PackageMetadata;
             _packageFilePath = viewModel.GetCurrentPackageTempFile();
             SelectedPublishItem = _mruSourceManager.ActivePackageSource;
             PublishAsUnlisted = _settingsManager.PublishAsUnlisted;
         }
 
-        public string PublishKeyOrPAT
+        public string? PublishKeyOrPAT
         {
             get { return _publishKeyOrPAT; }
             set
@@ -54,7 +60,6 @@ namespace PackageExplorerViewModel
             }
         }
 
-        [SuppressMessage("Microsoft.Design", "CA1056:UriPropertiesShouldNotBeStrings")]
         public string PublishUrl
         {
             get { return _mruSourceManager.ActivePackageSource; }
@@ -68,7 +73,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public string SelectedPublishItem
+        public string? SelectedPublishItem
         {
             get { return _selectedPublishItem; }
             set
@@ -86,10 +91,18 @@ namespace PackageExplorerViewModel
                         if (!_suppressReadingApiKey)
                         {
                             // when the selection change, we retrieve the API key for that source
-                            var key = _settingsManager.ReadApiKey(value);
-                            if (!string.IsNullOrEmpty(key))
+                            try
                             {
-                                PublishKeyOrPAT = key;
+                                var key = _settingsManager.ReadApiKey(value);
+                                if (!string.IsNullOrEmpty(key))
+                                {
+                                    PublishKeyOrPAT = key;
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                _uiServices.Show("Cannot read API key:\n" + e.Message, MessageLevel.Error);
+                                PublishKeyOrPAT = null;
                             }
                         }
                     }
@@ -177,7 +190,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public string Status
+        public string? Status
         {
             get { return _status; }
             set
@@ -197,12 +210,18 @@ namespace PackageExplorerViewModel
             ShowProgress = false;
             HasError = false;
             Status = (PublishAsUnlisted == true) ? "Package published and unlisted successfully." : "Package published successfully.";
-            _settingsManager.WriteApiKey(PublishUrl, PublishKeyOrPAT);
+            if (PublishKeyOrPAT != null)
+            {
+                _settingsManager.WriteApiKey(PublishUrl, PublishKeyOrPAT);
+            }
+
             CanPublish = true;
         }
 
         public void OnError(Exception error)
         {
+            if (error is null)
+                throw new ArgumentNullException(nameof(error));
             ShowProgress = false;
             HasError = true;
             Status = error.Message;
@@ -217,6 +236,8 @@ namespace PackageExplorerViewModel
 
         public async Task PushPackage()
         {
+            DiagnosticsClient.TrackEvent("PushPackage");
+
             ShowProgress = true;
             Status = (PublishAsUnlisted == true) ? "Publishing and unlisting package..." : "Publishing package...";
             HasError = false;
@@ -229,7 +250,8 @@ namespace PackageExplorerViewModel
                 var repository = PackageRepositoryFactory.CreateRepository(PublishUrl);
                 var updateResource = await repository.GetResourceAsync<PackageUpdateResource>();
 
-                await updateResource.Push(_packageFilePath, null, 999, false, s => PublishKeyOrPAT, s => PublishKeyOrPAT, AppendV2ApiToUrl != true, NullLogger.Instance);
+                await updateResource.Push(new[] { _packageFilePath }, null, 999, false, s => PublishKeyOrPAT, s => PublishKeyOrPAT, AppendV2ApiToUrl != true, false, null, NullLogger.Instance);
+                
 
                 if (PublishAsUnlisted == true)
                 {
@@ -264,7 +286,7 @@ namespace PackageExplorerViewModel
 
         public void Dispose()
         {
-            _settingsManager.PublishAsUnlisted = (bool)PublishAsUnlisted;
+            _settingsManager.PublishAsUnlisted = PublishAsUnlisted.GetValueOrDefault();
         }
     }
 }

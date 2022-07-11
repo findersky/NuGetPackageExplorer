@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel.Composition;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Linq;
 using NuGet.Packaging;
 using NuGet.Versioning;
 using NuGetPackageExplorer.Types;
@@ -14,43 +15,44 @@ namespace PackageExplorerViewModel
     internal class MruManager : IMruManager
     {
         private const int MaxFile = 10;
-        private readonly ObservableCollection<MruItem> _files;
         private readonly ISettingsManager _settingsManager;
 
-        [SuppressMessage(
-            "Microsoft.Performance",
-            "CA1811:AvoidUncalledPrivateCode",
-            Justification = "Called by MEF")]
         [ImportingConstructor]
         public MruManager(ISettingsManager settingsManager)
         {
-            var savedFiles = settingsManager.GetMruFiles();
-
-            _files = new ObservableCollection<MruItem>();
-            for (var i = savedFiles.Count - 1; i >= 0; --i)
-            {
-                var s = savedFiles[i];
-                var item = ConvertStringToMruItem(s);
-                if (item != null)
-                {
-                    AddFile(item);
-                }
-            }
+            Files = new ObservableCollection<MruItem>();
 
             _settingsManager = settingsManager;
+
+            try
+            {
+                var savedFiles = settingsManager.GetMruFiles();
+                for (var i = savedFiles.Count - 1; i >= 0; --i)
+                {
+                    var s = savedFiles[i];
+                    var item = ConvertStringToMruItem(s);
+                    if (item != null)
+                    {
+                        AddFile(item);
+                    }
+                }
+            }
+            catch // Corrupt setting
+            {
+                try
+                {
+                    // try to clear
+                    settingsManager.SetMruFiles(Enumerable.Empty<string>());
+                }
+                catch
+                {
+                    // something else happened, not much we can do
+                }
+            }
         }
 
-        #region IMruManager Members
+        public ObservableCollection<MruItem> Files { get; }
 
-        public ObservableCollection<MruItem> Files
-        {
-            get { return _files; }
-        }
-
-        [SuppressMessage(
-            "Microsoft.Globalization",
-            "CA1308:NormalizeStringsToUppercase",
-            Justification = "We don't want to show upper case path.")]
         public void NotifyFileAdded(IPackageMetadata package, string filepath, PackageType packageType)
         {
             var item = new MruItem
@@ -65,7 +67,7 @@ namespace PackageExplorerViewModel
 
         public void Clear()
         {
-            _files.Clear();
+            Files.Clear();
         }
 
         public void Dispose()
@@ -73,12 +75,10 @@ namespace PackageExplorerViewModel
             OnApplicationExit();
         }
 
-        #endregion
-
         private void OnApplicationExit()
         {
             var sc = new List<string>();
-            foreach (var item in _files)
+            foreach (var item in Files)
             {
                 if (item != null)
                 {
@@ -93,15 +93,15 @@ namespace PackageExplorerViewModel
         {
             if (mruItem == null)
             {
-                throw new ArgumentNullException("mruItem");
+                throw new ArgumentNullException(nameof(mruItem));
             }
 
-            _files.Remove(mruItem);
-            _files.Insert(0, mruItem);
+            Files.Remove(mruItem);
+            Files.Insert(0, mruItem);
 
-            if (_files.Count > MaxFile)
+            if (Files.Count > MaxFile)
             {
-                _files.RemoveAt(_files.Count - 1);
+                Files.RemoveAt(Files.Count - 1);
             }
         }
 
@@ -112,11 +112,7 @@ namespace PackageExplorerViewModel
                                  item.PackageType);
         }
 
-        [SuppressMessage(
-            "Microsoft.Performance",
-            "CA1811:AvoidUncalledPrivateCode",
-            Justification = "Called by MEF.")]
-        private static MruItem ConvertStringToMruItem(string s)
+        private static MruItem? ConvertStringToMruItem(string s)
         {
             if (string.IsNullOrEmpty(s))
             {
@@ -140,15 +136,7 @@ namespace PackageExplorerViewModel
             return ParseMruItem(parts);
         }
 
-        [SuppressMessage(
-            "Microsoft.Globalization",
-            "CA1308:NormalizeStringsToUppercase",
-            Justification = "We don't want to show upper case path.")]
-        [SuppressMessage(
-            "Microsoft.Performance",
-            "CA1811:AvoidUncalledPrivateCode",
-            Justification = "Called by MEF.")]
-        private static MruItem ParseMruItem(string[] parts)
+        private static MruItem? ParseMruItem(string[] parts)
         {
             // v1.1 onwards
             if (!Enum.TryParse(parts[3], out PackageType type))

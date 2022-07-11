@@ -11,16 +11,23 @@ namespace PackageExplorer
     [Export(typeof(IPackageChooser))]
     internal class PackageChooserService : IPackageChooser
     {
-        // for select package dialog
-        private PackageChooserDialog _dialog;
-        private PackageChooserViewModel _viewModel;
+        private PackageChooserViewModel? _viewModel;
 
+#if !HAS_UNO
         // for select plugin dialog
-        private PackageChooserDialog _pluginDialog;
-        private PackageChooserViewModel _pluginViewModel;
+        private PackageChooserDialog? _pluginDialog;
+#endif
 
+#pragma warning disable CA2213 // Disposable fields should be disposed
+        private PackageChooserViewModel? _pluginViewModel;
+#pragma warning restore CA2213 // Disposable fields should be disposed
+
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         [Import]
         public IPackageViewModelFactory ViewModelFactory { get; set; }
+
+        [Import]
+        public ISettingsManager SettingsManager { get; set; }
 
         [Import]
         public IUIServices UIServices { get; set; }
@@ -31,30 +38,47 @@ namespace PackageExplorer
         [Import]
         public Lazy<MainWindow> Window { get; set; }
 
-        #region IPackageChooser Members
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
 
-        public SourceRepository Repository => _viewModel.ActiveRepository;
+        public SourceRepository? Repository => _viewModel?.ActiveRepository;
 
-        public PackageInfo SelectPackage(string searchTerm)
+        public PackageInfo? SelectPackage(string? searchTerm)
         {
-            if (_dialog == null)
+            if (_viewModel == null)
             {
                 _viewModel = ViewModelFactory.CreatePackageChooserViewModel(null);
                 _viewModel.PackageDownloadRequested += OnPackageDownloadRequested;
-                _dialog = new PackageChooserDialog(_viewModel);
             }
 
-            _dialog.Owner = Window.Value;
-            ReCenterPackageChooserDialog(_dialog);
-            _dialog.ShowDialog(searchTerm);
+#if !HAS_UNO
+            var dialog = new PackageChooserDialog(SettingsManager, _viewModel)
+            {
+                Owner = Window.Value
+            };
+
+            ReCenterPackageChooserDialog(dialog);
+
+            try
+            {
+                dialog.ShowDialog(searchTerm);
+            }
+            catch (ArgumentException e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
+            }
+#endif
+
             return _viewModel.SelectedPackage;
         }
 
-        private async void OnPackageDownloadRequested(object sender, EventArgs e)
+        private async void OnPackageDownloadRequested(object? sender, EventArgs e)
         {
-            var repository = _viewModel.ActiveRepository;
-            var packageInfo = _viewModel.SelectedPackage;
-            if (packageInfo != null)
+            DiagnosticsClient.TrackEvent("PackageChooserService_OnPackageDownloadRequested");
+
+            var vm = (PackageChooserViewModel)sender!;
+            var repository = vm.ActiveRepository;
+            var packageInfo = vm.SelectedPackage;
+            if (packageInfo != null && repository != null)
             {
 
                 var packageName = packageInfo.Id + "." + packageInfo.Version + NuGetPe.Constants.PackageExtension;
@@ -77,29 +101,45 @@ namespace PackageExplorer
                     {
                         selectedFilePath += NuGetPe.Constants.PackageExtension;
                     }
+                    else if (selectedIndex == 2 &&
+                             !selectedFilePath.EndsWith(NuGetPe.Constants.SymbolPackageExtension, StringComparison.OrdinalIgnoreCase))
+                    {
+                        selectedFilePath += NuGetPe.Constants.SymbolPackageExtension;
+                    }
 
-                    await PackageDownloader.Download(selectedFilePath, repository, packageInfo.Identity);
+                    try
+                    {
+                        await PackageDownloader.Download(selectedFilePath, repository, packageInfo.Identity);
+                    }
+                    catch (Exception ex)
+                    {
+                        UIServices.Show(ex.Message, MessageLevel.Error);
+                    }
+
                 }
             }
         }
 
-        public SourceRepository PluginRepository => _pluginViewModel.ActiveRepository;
+        public SourceRepository? PluginRepository => _pluginViewModel?.ActiveRepository;
 
-        public PackageInfo SelectPluginPackage()
+        public PackageInfo? SelectPluginPackage()
         {
+#if !HAS_UNO
             if (_pluginDialog == null)
             {
                 _pluginViewModel = ViewModelFactory.CreatePackageChooserViewModel(NuGetConstants.PluginFeedUrl);
-                _pluginDialog = new PackageChooserDialog(_pluginViewModel);
+                _pluginDialog = new PackageChooserDialog(SettingsManager, _pluginViewModel);
             }
 
             _pluginDialog.Owner = Window.Value;
             ReCenterPackageChooserDialog(_pluginDialog);
             _pluginDialog.ShowDialog();
-            return _pluginViewModel.SelectedPackage;
+#endif
+            return _pluginViewModel?.SelectedPackage;
         }
 
-        private void ReCenterPackageChooserDialog(StandardDialog dialog)
+#if !HAS_UNO
+        private static void ReCenterPackageChooserDialog(StandardDialog dialog)
         {
             if (dialog.Owner == null)
             {
@@ -119,16 +159,16 @@ namespace PackageExplorer
             dialog.Left = ownerCenterX - dialog.ActualWidth / 2;
             dialog.Top = ownerCenterY - dialog.ActualHeight / 2;
         }
+#endif
 
         public void Dispose()
         {
-            if (_dialog != null)
+            if (_viewModel != null)
             {
-                _dialog.ForceClose();
+                _viewModel.PackageDownloadRequested -= OnPackageDownloadRequested;
                 _viewModel.Dispose();
+                _viewModel = null;
             }
         }
-
-        #endregion
     }
 }

@@ -9,7 +9,7 @@ using NuGetPe;
 
 namespace PackageExplorerViewModel
 {
-    public class EmptyPackage : IPackage
+    public sealed class EmptyPackage : IPackage
     {
         #region IPackage Members
 
@@ -18,9 +18,11 @@ namespace PackageExplorerViewModel
             return Enumerable.Empty<IPackageFile>();
         }
 
+        public IEnumerable<FrameworkReferenceGroup> FrameworkReferenceGroups => Enumerable.Empty<FrameworkReferenceGroup>();
+
         public Stream GetStream()
         {
-            return null;
+            return new MemoryStream();
         }
 
         public string Id
@@ -33,7 +35,7 @@ namespace PackageExplorerViewModel
             get { return NuGetVersion.Parse("1.0.0"); }
         }
 
-        public string Title
+        public string? Title
         {
             get { return string.Empty; }
         }
@@ -48,17 +50,21 @@ namespace PackageExplorerViewModel
             get { return Enumerable.Empty<string>(); }
         }
 
-        public Uri IconUrl
+        public Uri? IconUrl
         {
             get { return null; }
         }
 
-        public Uri LicenseUrl
+        public string? Icon => null;
+
+        public string? Readme => null;
+
+        public Uri? LicenseUrl
         {
             get { return null; }
         }
 
-        public Uri ProjectUrl
+        public Uri? ProjectUrl
         {
             get { return null; }
         }
@@ -73,32 +79,32 @@ namespace PackageExplorerViewModel
             get { return false; }
         }
 
-        public string Description
+        public string? Description
         {
             get { return "My package description."; }
         }
 
-        public string Summary
+        public string? Summary
         {
             get { return null; }
         }
 
-        public string ReleaseNotes
+        public string? ReleaseNotes
         {
             get { return null; }
         }
 
-        public string Copyright
+        public string? Copyright
         {
             get { return null; }
         }
 
-        public string Language
+        public string? Language
         {
             get { return null; }
         }
 
-        public string Tags
+        public string? Tags
         {
             get { return null; }
         }
@@ -108,12 +114,7 @@ namespace PackageExplorerViewModel
             get { return false; }
         }
 
-        public IEnumerable<PackageDependencyGroup> DependencySets
-        {
-            get { return Enumerable.Empty<PackageDependencyGroup>(); }
-        }
-
-        public Uri ReportAbuseUrl
+        public Uri? ReportAbuseUrl
         {
             get { return null; }
         }
@@ -123,7 +124,9 @@ namespace PackageExplorerViewModel
             get { return -1; }
         }
 
+#pragma warning disable CA1822 // Mark members as static
         public IEnumerable<FrameworkAssemblyReference> FrameworkAssemblies
+#pragma warning restore CA1822 // Mark members as static
         {
             get { return Enumerable.Empty<FrameworkAssemblyReference>(); }
         }
@@ -158,7 +161,7 @@ namespace PackageExplorerViewModel
             get { return DateTimeOffset.Now; }
         }
 
-        public Version MinClientVersion
+        public Version? MinClientVersion
         {
             get
             {
@@ -174,7 +177,9 @@ namespace PackageExplorerViewModel
 
         public IEnumerable<PackageType> PackageTypes => Enumerable.Empty<PackageType>();
 
-        public RepositoryMetadata Repository => null;
+        public RepositoryMetadata? Repository => null;
+
+        public LicenseMetadata? LicenseMetadata => null;
 
         #endregion
 

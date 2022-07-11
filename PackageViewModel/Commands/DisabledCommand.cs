@@ -7,18 +7,18 @@ namespace PackageExplorerViewModel
     {
         #region ICommand Members
 
-        public bool CanExecute(object parameter)
+        public bool CanExecute(object? parameter)
         {
             return false;
         }
 
-        event EventHandler ICommand.CanExecuteChanged
+        event EventHandler? ICommand.CanExecuteChanged
         {
             add { }
             remove { }
         }
 
-        public void Execute(object parameter)
+        public void Execute(object? parameter)
         {
         }
 

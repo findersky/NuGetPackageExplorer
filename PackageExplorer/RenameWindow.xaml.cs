@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using NuGetPe;
 
 namespace PackageExplorer
 {
@@ -16,7 +17,9 @@ namespace PackageExplorer
         public static readonly DependencyProperty NewNameProperty =
             DependencyProperty.Register("NewName", typeof(string), typeof(RenameWindow));
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         public RenameWindow()
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
             InitializeComponent();
 
@@ -28,6 +31,8 @@ namespace PackageExplorer
             binding.ValidationRules.Add(NameValidationRule.Instance);
 
             NameBox.SetBinding(TextBox.TextProperty, binding);
+
+            DiagnosticsClient.TrackPageView(nameof(RenameWindow));
         }
 
         public string NewName

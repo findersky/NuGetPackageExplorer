@@ -3,10 +3,11 @@ using System.ComponentModel.Composition;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Threading;
 using Microsoft.Win32;
 using NuGetPackageExplorer.Types;
+using NuGetPe;
 using Ookii.Dialogs.Wpf;
 
 namespace PackageExplorer
@@ -14,12 +15,13 @@ namespace PackageExplorer
     [Export(typeof(IUIServices))]
     internal class UIServices : IUIServices
     {
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         [Import]
         public Lazy<MainWindow> Window { get; set; }
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
+        public object Initialize() => Window.Value;
 
-        #region IUIServices Members
-
-        public bool OpenSaveFileDialog(string title, string defaultFileName, string initialDirectory, string filter, bool overwritePrompt,
+        public bool OpenSaveFileDialog(string title, string defaultFileName, string? initialDirectory, string filter, bool overwritePrompt,
                                        out string selectedFilePath, out int selectedFilterIndex)
         {
             var dialog = new SaveFileDialog
@@ -29,6 +31,7 @@ namespace PackageExplorer
                 Filter = filter,
                 FileName = defaultFileName,
                 ValidateNames = true,
+                AddExtension = true,
                 InitialDirectory = !string.IsNullOrEmpty(initialDirectory) ? Path.GetDirectoryName(initialDirectory) : initialDirectory
             };
 
@@ -41,7 +44,7 @@ namespace PackageExplorer
             }
             else
             {
-                selectedFilePath = null;
+                selectedFilePath = string.Empty;
                 selectedFilterIndex = -1;
                 return false;
             }
@@ -60,17 +63,27 @@ namespace PackageExplorer
                 Filter = filter
             };
 
-            var result = dialog.ShowDialog();
-            if (result ?? false)
+            try
             {
-                selectedFileName = dialog.FileName;
-                return true;
+                var result = dialog.ShowDialog();
+                if (result ?? false)
+                {
+                    selectedFileName = dialog.FileName;
+                    return true;
+                }
+                else
+                {
+                    selectedFileName = string.Empty;
+                    return false;
+                }
             }
-            else
+            catch (Exception e)
             {
-                selectedFileName = null;
+                Show(e.Message, MessageLevel.Error);
+                selectedFileName = string.Empty;
                 return false;
             }
+
         }
 
         public bool OpenMultipleFilesDialog(string title, string filter, out string[] selectedFileNames)
@@ -94,7 +107,7 @@ namespace PackageExplorer
             }
             else
             {
-                selectedFileNames = null;
+                selectedFileNames = Array.Empty<string>();
                 return false;
             }
         }
@@ -121,31 +134,34 @@ namespace PackageExplorer
 
         public void Show(string message, MessageLevel messageLevel)
         {
-            MessageBoxImage image;
-            switch (messageLevel)
+            var image = messageLevel switch
             {
-                case MessageLevel.Error:
-                    image = MessageBoxImage.Error;
-                    break;
+                MessageLevel.Error => MessageBoxImage.Error,
 
-                case MessageLevel.Information:
-                    image = MessageBoxImage.Information;
-                    break;
+                MessageLevel.Information => MessageBoxImage.Information,
 
-                case MessageLevel.Warning:
-                    image = MessageBoxImage.Warning;
-                    break;
+                MessageLevel.Warning => MessageBoxImage.Warning,
 
-                default:
-                    throw new ArgumentOutOfRangeException("messageLevel");
-            }
-
-            MessageBox.Show(
+                _ => throw new ArgumentOutOfRangeException(nameof(messageLevel)),
+            };
+            void ShowDialog()
+            {
+                MessageBox.Show(
                 Window.Value,
                 message,
                 Resources.Dialog_Title,
                 MessageBoxButton.OK,
                 image);
+            }
+
+            if (!Window.Value.Dispatcher.CheckAccess())
+            {
+                Window.Value.Dispatcher.Invoke(ShowDialog);
+            }
+            else
+            {
+                ShowDialog();
+            }
         }
 
         public bool OpenRenameDialog(string currentName, string description, out string newName)
@@ -165,7 +181,7 @@ namespace PackageExplorer
             }
             else
             {
-                newName = null;
+                newName = string.Empty;
                 return false;
             }
         }
@@ -177,8 +193,7 @@ namespace PackageExplorer
                 Owner = Window.Value,
                 DataContext = viewModel
             };
-
-            if (viewModel is IDisposable disposable)
+            if (viewModel is IDisposable)
             {
                 dialog.Closed += OnDialogClosed;
             }
@@ -194,8 +209,7 @@ namespace PackageExplorer
                 Owner = Window.Value,
                 DataContext = viewModel
             };
-
-            if (viewModel is IDisposable disposable)
+            if (viewModel is IDisposable)
             {
                 dialog.Closed += OnDialogClosed;
             }
@@ -211,8 +225,7 @@ namespace PackageExplorer
                 Owner = Window.Value,
                 DataContext = viewModel
             };
-
-            if (viewModel is IDisposable disposable)
+            if (viewModel is IDisposable)
             {
                 dialog.Closed += OnDialogClosed;
             }
@@ -222,9 +235,9 @@ namespace PackageExplorer
             return result ?? false;
         }
 
-        private void OnDialogClosed(object sender, EventArgs e)
+        private void OnDialogClosed(object? sender, EventArgs e)
         {
-            var window = (Window)sender;
+            var window = (Window)sender!;
             if (window.DataContext is IDisposable disposable)
             {
                 disposable.Dispose();
@@ -234,37 +247,46 @@ namespace PackageExplorer
 
         public bool OpenFolderDialog(string title, string initialPath, out string selectedPath)
         {
-            var dialog = new VistaFolderBrowserDialog
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog()
             {
-                ShowNewFolderButton = true,
                 SelectedPath = initialPath,
                 Description = title,
                 UseDescriptionForTitle = true
             };
 
-            var result = dialog.ShowDialog(Window.Value);
-            if (result ?? false)
+            try
             {
-                selectedPath = dialog.SelectedPath;
-                return true;
+                var result = dialog.ShowDialog();
+                if (result == System.Windows.Forms.DialogResult.OK)
+                {
+                    selectedPath = dialog.SelectedPath;
+                    return true;
+                }
+                else
+                {
+                    selectedPath = string.Empty;
+                    return false;
+                }
             }
-            else
+            catch(Exception e)
             {
-                selectedPath = null;
+                Show(e.Message, MessageLevel.Error);
+                selectedPath = string.Empty;
                 return false;
             }
+            
         }
 
-        public DispatcherOperation BeginInvoke(Action action)
+        public Task BeginInvoke(Action action)
         {
-            return Window.Value.Dispatcher.BeginInvoke(action);
+            return Window.Value.Dispatcher.BeginInvoke(action).Task;
         }
 
         public Tuple<bool?, bool> ConfirmMoveFile(string fileName, string targetFolder, int numberOfItemsLeft)
         {
             if (numberOfItemsLeft < 0)
             {
-                throw new ArgumentOutOfRangeException("numberOfItemsLeft");
+                throw new ArgumentOutOfRangeException(nameof(numberOfItemsLeft));
             }
 
             var mainInstruction = string.Format(
@@ -276,111 +298,64 @@ namespace PackageExplorer
             return ConfirmMoveFileUsingTaskDialog(fileName, targetFolder, numberOfItemsLeft, mainInstruction);
         }
 
-        public bool? AskToInstallNpeOnWindows8()
-        {
-            using (var dialog = new TaskDialog())
-            {
-                dialog.WindowTitle = Resources.Dialog_Title;
-                dialog.MainInstruction = "Great! You are running on Windows 8";
-                dialog.Content = "There is also a Windows Store app of NuGet Package Explorer that is designed to be touch friendly, fast and fluid. Do you want to install it now?";
-                dialog.AllowDialogCancellation = true;
-                dialog.CenterParent = true;
-                dialog.ButtonStyle = TaskDialogButtonStyle.CommandLinks;
-
-                var yesButton = new TaskDialogButton
-                {
-                    Text = "Yes",
-                    CommandLinkNote = "Go to the Store and install it now."
-                };
-
-                var noButton = new TaskDialogButton
-                {
-                    Text = "No",
-                    CommandLinkNote = "Don't bother."
-                };
-
-                var remindButton = new TaskDialogButton("Remind me next time");
-
-                dialog.Buttons.Add(yesButton);
-                dialog.Buttons.Add(noButton);
-                dialog.Buttons.Add(remindButton);
-
-                var result = dialog.ShowDialog();
-                if (result == yesButton)
-                {
-                    return true;
-                }
-                else if (result == noButton)
-                {
-                    return false;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-        }
-
-        #endregion
-
         private static bool ConfirmUsingTaskDialog(string message, string title, bool isWarning)
         {
-            using (var dialog = new TaskDialog())
+            using var dialog = new TaskDialog
             {
-                dialog.WindowTitle = Resources.Dialog_Title;
-                dialog.MainInstruction = title;
-                dialog.Content = message;
-                dialog.AllowDialogCancellation = true;
-                dialog.CenterParent = true;
-                //dialog.ButtonStyle = TaskDialogButtonStyle.CommandLinks;
-                if (isWarning)
-                {
-                    dialog.MainIcon = TaskDialogIcon.Warning;
-                }
-
-                var yesButton = new TaskDialogButton("Yes");
-                var noButton = new TaskDialogButton("No");
-
-                dialog.Buttons.Add(yesButton);
-                dialog.Buttons.Add(noButton);
-
-                var result = dialog.ShowDialog();
-                return result == yesButton;
+                WindowTitle = Resources.Dialog_Title,
+                MainInstruction = title,
+                Content = message,
+                AllowDialogCancellation = true,
+                CenterParent = true
+            };
+            //dialog.ButtonStyle = TaskDialogButtonStyle.CommandLinks;
+            if (isWarning)
+            {
+                dialog.MainIcon = TaskDialogIcon.Warning;
             }
+
+            var yesButton = new TaskDialogButton("Yes");
+            var noButton = new TaskDialogButton("No");
+
+            dialog.Buttons.Add(yesButton);
+            dialog.Buttons.Add(noButton);
+
+            var result = dialog.ShowDialog();
+            return result == yesButton;
         }
 
         private static bool? ConfirmWithCancelUsingTaskDialog(string message, string title)
         {
-            using (var dialog = new TaskDialog())
+            using var dialog = new TaskDialog
             {
-                dialog.WindowTitle = Resources.Dialog_Title;
-                dialog.MainInstruction = title;
-                dialog.AllowDialogCancellation = true;
-                dialog.Content = message;
-                dialog.CenterParent = true;
-                dialog.MainIcon = TaskDialogIcon.Warning;
-                //dialog.ButtonStyle = TaskDialogButtonStyle.CommandLinks;
+                WindowTitle = Resources.Dialog_Title,
+                MainInstruction = title,
+                AllowDialogCancellation = true,
+                Content = message,
+                CenterParent = true,
+                MainIcon = TaskDialogIcon.Warning
+            };
+            //dialog.ButtonStyle = TaskDialogButtonStyle.CommandLinks;
 
-                var yesButton = new TaskDialogButton("Yes");
-                var noButton = new TaskDialogButton("No");
-                var cancelButton = new TaskDialogButton("Cancel");
+            var yesButton = new TaskDialogButton("Yes");
+            var noButton = new TaskDialogButton("No");
+            var cancelButton = new TaskDialogButton("Cancel");
 
-                dialog.Buttons.Add(yesButton);
-                dialog.Buttons.Add(noButton);
-                dialog.Buttons.Add(cancelButton);
+            dialog.Buttons.Add(yesButton);
+            dialog.Buttons.Add(noButton);
+            dialog.Buttons.Add(cancelButton);
 
-                var result = dialog.ShowDialog();
-                if (result == yesButton)
-                {
-                    return true;
-                }
-                else if (result == noButton)
-                {
-                    return false;
-                }
-
-                return null;
+            var result = dialog.ShowDialog();
+            if (result == yesButton)
+            {
+                return true;
             }
+            else if (result == noButton)
+            {
+                return false;
+            }
+
+            return null;
         }
 
         private Tuple<bool?, bool> ConfirmMoveFileUsingTaskDialog(string fileName, string targetFolder,
@@ -391,7 +366,7 @@ namespace PackageExplorer
                 Resources.MoveContentFileToFolderExplanation,
                 targetFolder);
 
-            var dialog = new TaskDialog
+            using var dialog = new TaskDialog
             {
                 MainInstruction = mainInstruction,
                 Content = content,
@@ -446,33 +421,33 @@ namespace PackageExplorer
 
         private static bool ConfirmCloseEditorUsingTaskDialog(string title, string message)
         {
-            using (var dialog = new TaskDialog())
+            using var dialog = new TaskDialog
             {
-                dialog.WindowTitle = Resources.Dialog_Title;
-                dialog.MainInstruction = title;
-                dialog.Content = message;
-                dialog.AllowDialogCancellation = false;
-                dialog.CenterParent = true;
-                dialog.ButtonStyle = TaskDialogButtonStyle.CommandLinks;
+                WindowTitle = Resources.Dialog_Title,
+                MainInstruction = title,
+                Content = message,
+                AllowDialogCancellation = false,
+                CenterParent = true,
+                ButtonStyle = TaskDialogButtonStyle.CommandLinks
+            };
 
-                var yesButton = new TaskDialogButton
-                {
-                    Text = "Yes",
-                    CommandLinkNote = "Return to package view and lose all your changes."
-                };
+            var yesButton = new TaskDialogButton
+            {
+                Text = "Yes",
+                CommandLinkNote = "Return to package view and lose all your changes."
+            };
 
-                var noButton = new TaskDialogButton
-                {
-                    Text = "No",
-                    CommandLinkNote = "Stay at the metadata editor and fix the error."
-                };
+            var noButton = new TaskDialogButton
+            {
+                Text = "No",
+                CommandLinkNote = "Stay at the metadata editor and fix the error."
+            };
 
-                dialog.Buttons.Add(yesButton);
-                dialog.Buttons.Add(noButton);
+            dialog.Buttons.Add(yesButton);
+            dialog.Buttons.Add(noButton);
 
-                var result = dialog.ShowDialog();
-                return result == yesButton;
-            }
+            var result = dialog.ShowDialog();
+            return result == yesButton;
         }
 
         public bool TrySelectPortableFramework(out string portableFramework)
@@ -490,29 +465,46 @@ namespace PackageExplorer
             }
             else
             {
-                portableFramework = null;
+                portableFramework = string.Empty;
                 return false;
             }
         }
 
-        public bool OpenCredentialsDialog(string target, out NetworkCredential networkCredential)
+        public bool OpenCredentialsDialog(string target, out NetworkCredential? networkCredential)
         {
-            using (var dialog = new CredentialDialog())
+            DiagnosticsClient.TrackEvent("UIServices_OpenCredentialsDialog");
+            using var dialog = new CredentialDialog
             {
-                dialog.WindowTitle = Resources.Dialog_Title;
-                dialog.MainInstruction = "Credentials for " + target;
-                dialog.Content = "Enter Personal Access Tokens in the username field.";
-                dialog.Target = target;
+                WindowTitle = Resources.Dialog_Title,
+                MainInstruction = "Credentials for " + target,
+                Content = "Enter Personal Access Tokens in the username field.",
+                Target = target,
+                ShowSaveCheckBox = true, // Allow user to save the credentials to operating system's credential manager
+                ShowUIForSavedCredentials = false // Do not show dialog when credentials can be grabbed from OS credential manager
+            };
 
+            try
+            {
+                // Show dialog or query credential manager
                 if (dialog.ShowDialog())
                 {
+                    // When dialog was shown
+                    if (!dialog.IsStoredCredential)
+                    {
+                        // Save the credentials when save checkbox was checked
+                        dialog.ConfirmCredentials(true);
+                    }
                     networkCredential = dialog.Credentials;
                     return true;
                 }
-
-                networkCredential = null;
-                return false;
             }
+            catch (Exception e)
+            {
+                Show(e.Message, MessageLevel.Error);
+            }
+
+            networkCredential = null;
+            return false;
         }
     }
 }

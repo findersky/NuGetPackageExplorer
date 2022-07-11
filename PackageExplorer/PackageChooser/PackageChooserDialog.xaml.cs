@@ -5,7 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
-using PackageExplorer.Properties;
+using NuGetPackageExplorer.Types;
+using NuGetPe;
 using PackageExplorerViewModel;
 
 namespace PackageExplorer
@@ -15,23 +16,26 @@ namespace PackageExplorer
     /// </summary>
     public partial class PackageChooserDialog : StandardDialog
     {
+        private readonly ISettingsManager _settings;
         private readonly PackageChooserViewModel _viewModel;
-        private string _pendingSearch;
+        private string? _pendingSearch;
 
-        public PackageChooserDialog(PackageChooserViewModel viewModel)
+        public PackageChooserDialog(ISettingsManager settings, PackageChooserViewModel viewModel)
         {
             InitializeComponent();
 
-            Debug.Assert(viewModel != null);
+            _settings = settings;
 
-            _viewModel = viewModel;
+            _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
             _viewModel.LoadPackagesCompleted += OnLoadPackagesCompleted;
             _viewModel.OpenPackageRequested += OnOpenPackageRequested;
 
             DataContext = _viewModel;
+
+            DiagnosticsClient.TrackPageView(nameof(PackageChooserDialog));
         }
 
-        private void OnLoadPackagesCompleted(object sender, EventArgs e)
+        private void OnLoadPackagesCompleted(object? sender, EventArgs e)
         {
             // Ensure that the SearchBox is focused after the packages have loaded so that the user can search right
             // away if they need to. Currently the default search behavior is not working most likely do to the
@@ -39,7 +43,7 @@ namespace PackageExplorer
             FocusSearchBox();
         }
 
-        private void OnOpenPackageRequested(object sender, EventArgs e)
+        private void OnOpenPackageRequested(object? sender, EventArgs e)
         {
             Hide();
         }
@@ -75,30 +79,18 @@ namespace PackageExplorer
             }
         }
 
-        private void InvokeSearch(string searchTerm)
+        private void InvokeSearch(string? searchTerm)
         {
+            DiagnosticsClient.TrackEvent("SearchForPackage");
             SearchButton.Command.Execute(searchTerm);
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_pendingSearch))
-            {
-                await Dispatcher.BeginInvoke(new Action(LoadPackages), DispatcherPriority.Background);
-            }
-            else
-            {
-                await Dispatcher.BeginInvoke(
-                    new Action<string>(InvokeSearch),
-                    DispatcherPriority.Background,
-                    _pendingSearch);
-            }
-        }
-
-        private void LoadPackages()
-        {
-            var loadedCommand = (ICommand)Tag;
-            loadedCommand.Execute(null);
+            await Dispatcher.BeginInvoke(
+                new Action<string>(InvokeSearch),
+                DispatcherPriority.Background,
+                _pendingSearch);
         }
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -114,9 +106,8 @@ namespace PackageExplorer
         {
             if (!e.NewSize.IsEmpty)
             {
-                var settings = Settings.Default;
-                settings.PackageChooserDialogHeight = e.NewSize.Height;
-                settings.PackageChooserDialogWidth = e.NewSize.Width;
+                _settings.PackageChooserDialogHeight = e.NewSize.Height;
+                _settings.PackageChooserDialogWidth = e.NewSize.Width;
             }
         }
 
@@ -142,12 +133,6 @@ namespace PackageExplorer
             }
         }
 
-        private void OnAfterShow()
-        {
-            _viewModel.OnAfterShow();
-            FocusSearchBox();
-        }
-
         private void PackageSourceBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -161,29 +146,11 @@ namespace PackageExplorer
             }
         }
 
-        internal void ShowDialog(string searchTerm)
+        internal void ShowDialog(string? searchTerm)
         {
             _pendingSearch = searchTerm;
             ShowDialog();
             _pendingSearch = null;
-        }
-
-        private async void StandardDialog_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            // The first time this event handler is invoked, IsLoaded = false
-            // We only do work from the second time.
-            if (IsVisible && IsLoaded)
-            {
-                if (string.IsNullOrEmpty(_pendingSearch))
-                {
-                    // there is no pending search operation, just set focus on the search box
-                    await Dispatcher.InvokeAsync(new Action(OnAfterShow), DispatcherPriority.Background);
-                }
-                else
-                {
-                    InvokeSearch(_pendingSearch);
-                }
-            }
         }
 
         private void OnPackageDoubleClick(object sender, RoutedEventArgs e)
@@ -198,7 +165,7 @@ namespace PackageExplorer
 
         private void PackageSourceBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (e.AddedItems == null || e.AddedItems.Count == 0)
+            if (!IsLoaded || e.AddedItems == null || e.AddedItems.Count == 0)
             {
                 e.Handled = true;
                 return;
@@ -211,6 +178,28 @@ namespace PackageExplorer
             }
 
             e.Handled = true;
+        }
+
+        private void ListBoxPackages_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (e.VerticalChange != 0 && e.OriginalSource is ScrollViewer scrollViewer && scrollViewer.VerticalOffset == scrollViewer.ScrollableHeight)
+            {
+                if (scrollViewer.VerticalOffset == 0 && scrollViewer.ScrollableHeight == 0) // scroll back to top if packages got cleared
+                {
+                    scrollViewer.ScrollToTop();
+                }
+                else if (_viewModel.LoadMoreCommand.CanExecute(null)) // load more packages if scrolled to end
+                {
+                    _viewModel.LoadMoreCommand.Execute(null);
+                }
+            }
+            else if (e.ExtentHeight > 0 && e.ExtentHeight < e.ViewportHeight) // load more packages if viewport is higher than used space
+            {
+                if (_viewModel.LoadMoreCommand.CanExecute(null))
+                {
+                    _viewModel.LoadMoreCommand.Execute(null);
+                }
+            }
         }
     }
 }

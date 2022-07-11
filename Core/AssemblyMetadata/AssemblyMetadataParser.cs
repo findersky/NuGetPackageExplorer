@@ -24,6 +24,24 @@ namespace NuGetPe.AssemblyMetadata
             _metadataReader = _peReader.GetMetadataReader();
         }
 
+        public AssemblyDebugData GetDebugData()
+        {
+            var entry = _peReader.ReadDebugDirectory().Where(de => de.Type == DebugDirectoryEntryType.EmbeddedPortablePdb).ToList();
+            if (entry.Count == 0) // no embedded ppdb
+            {
+
+                return new AssemblyDebugData
+                {
+                    HasDebugInfo = false,
+                    SymbolKeys = AssemblyDebugParser.GetSymbolKeys(_peReader)
+                };
+
+            }
+
+            using var reader = new AssemblyDebugParser(_peReader, _peReader.ReadEmbeddedPortablePdbDebugDirectoryData(entry[0]), PdbType.Embedded);
+            return reader.GetDebugData();
+        }
+
         public IEnumerable<AssemblyName> GetReferencedAssemblyNames()
         {
             foreach (var referenceHandle in _metadataReader.AssemblyReferences)
@@ -61,7 +79,8 @@ namespace NuGetPe.AssemblyMetadata
             foreach (var attributeHandle in _metadataReader.CustomAttributes)
             {
                 var customAttribute = _metadataReader.GetCustomAttribute(attributeHandle);
-                if (customAttribute.Parent.Kind != HandleKind.AssemblyDefinition)
+                if (customAttribute.Constructor.Kind != HandleKind.MemberReference ||
+                    customAttribute.Parent.Kind != HandleKind.AssemblyDefinition)
                 {
                     continue;
                 }
@@ -73,7 +92,7 @@ namespace NuGetPe.AssemblyMetadata
 
                 var attributeTypeName = typeProvider.GetTypeFromReference(_metadataReader, attributeTypeRefHandle, 0);
 
-                AttributeInfo attrInfo = null;
+                AttributeInfo? attrInfo = null;
                 try
                 {
                     var customAttributeValues = customAttribute.DecodeValue(typeProvider);
@@ -115,7 +134,7 @@ namespace NuGetPe.AssemblyMetadata
 
         private class AttributeTypeProvider : ICustomAttributeTypeProvider<string>
         {
-            private static Dictionary<PrimitiveTypeCode, Type> PrimitiveTypeMappings =
+            private static readonly Dictionary<PrimitiveTypeCode, Type> PrimitiveTypeMappings =
                 new Dictionary<PrimitiveTypeCode, Type>
                 {
                     { PrimitiveTypeCode.Void, typeof(void) },
@@ -142,7 +161,7 @@ namespace NuGetPe.AssemblyMetadata
             {
                 if (PrimitiveTypeMappings.TryGetValue(typeCode, out var type))
                 {
-                    return type.FullName;
+                    return type.FullName!;
                 }
 
                 throw new ArgumentOutOfRangeException(nameof(typeCode), typeCode, @"Unexpected type code.");
@@ -182,16 +201,14 @@ namespace NuGetPe.AssemblyMetadata
                     : reader.GetString(reference.Namespace) + "." + reader.GetString(reference.Name);
 
                 Handle scope = reference.ResolutionScope;
-                switch (scope.Kind)
+                return scope.Kind switch
                 {
-                    case HandleKind.TypeReference:
-                        return GetTypeFromReference(reader, (TypeReferenceHandle)scope, 0) + "+" + name;
+                    HandleKind.TypeReference => GetTypeFromReference(reader, (TypeReferenceHandle)scope, 0) + "+" + name,
 
                     // If type refers other module or assembly, don't append them to result.
                     // Usually we don't have those assemblies, so we'll be unable to resolve the exact type.
-                    default:
-                        return name;
-                }
+                    _ => name,
+                };
             }
 
             public string GetSZArrayType(string elementType)
@@ -201,7 +218,7 @@ namespace NuGetPe.AssemblyMetadata
 
             public string GetSystemType()
             {
-                return typeof(Type).FullName;
+                return typeof(Type).FullName!;
             }
 
             public bool IsSystemType(string type)
@@ -231,7 +248,7 @@ namespace NuGetPe.AssemblyMetadata
                     }
                 }
 
-                throw new UnknownTypeException();
+                throw new UnknownTypeException($"Type '{type}' is of unknown TypeCode");
             }
         }
 
@@ -242,7 +259,17 @@ namespace NuGetPe.AssemblyMetadata
 
         private class UnknownTypeException : InvalidOperationException
         {
+            public UnknownTypeException(string message) : base(message)
+            {
+            }
 
+            public UnknownTypeException(string message, Exception innerException) : base(message, innerException)
+            {
+            }
+
+            public UnknownTypeException()
+            {
+            }
         }
     }
 }

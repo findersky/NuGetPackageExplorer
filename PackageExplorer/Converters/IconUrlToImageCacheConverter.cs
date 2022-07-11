@@ -5,6 +5,7 @@ using System.Net;
 using System.Runtime.Caching;
 using System.Windows.Data;
 using System.Windows.Media.Imaging;
+using System.Windows.Media;
 
 namespace PackageExplorer
 {
@@ -26,7 +27,7 @@ namespace PackageExplorer
 
         private static readonly ErrorFloodGate ErrorFloodGate = new ErrorFloodGate();
 
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             var iconUrl = value as string;
             var defaultPackageIcon = parameter as BitmapSource;
@@ -47,7 +48,11 @@ namespace PackageExplorer
                 return defaultPackageIcon;
             }
 
-            var iconBitmapImage = new BitmapImage();
+#pragma warning disable IDE0007 // Use implicit type
+            BitmapImage? iconBitmapImage = new BitmapImage();
+#pragma warning restore IDE0007 // Use implicit type
+
+            RenderOptions.SetBitmapScalingMode(iconBitmapImage, BitmapScalingMode.HighQuality);
             iconBitmapImage.BeginInit();
             iconBitmapImage.UriSource = new Uri(iconUrl);
 
@@ -59,6 +64,9 @@ namespace PackageExplorer
             // Instead of scaling larger images and keeping larger image in memory, this makes it so we scale it down, and throw away the bigger image.
             // Only need to set this on one dimension, to preserve aspect ratio
             iconBitmapImage.DecodePixelWidth = DecodePixelWidth;
+
+            // Workaround for https://github.com/dotnet/wpf/issues/3503
+            iconBitmapImage.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
 
             iconBitmapImage.DecodeFailed += IconBitmapImage_DownloadOrDecodeFailed;
             iconBitmapImage.DownloadFailed += IconBitmapImage_DownloadOrDecodeFailed;
@@ -77,7 +85,7 @@ namespace PackageExplorer
             finally
             {
                 // store this bitmapImage in the bitmap image cache, so that other occurances can reuse the BitmapImage
-                cachedBitmapImage = iconBitmapImage ?? defaultPackageIcon;
+                cachedBitmapImage = iconBitmapImage ?? defaultPackageIcon!;
                 AddToCache(iconUrl, cachedBitmapImage);
 
                 ErrorFloodGate.ReportAttempt();
@@ -91,7 +99,7 @@ namespace PackageExplorer
             throw new NotSupportedException();
         }
 
-        private static void AddToCache(string iconUrl, BitmapSource iconBitmapImage)
+        private static void AddToCache(string iconUrl, BitmapSource? iconBitmapImage)
         {
             var policy = new CacheItemPolicy
             {
@@ -106,7 +114,7 @@ namespace PackageExplorer
 
         }
 
-        private void IconBitmapImage_DownloadCompleted(object sender, EventArgs e)
+        private void IconBitmapImage_DownloadCompleted(object? sender, EventArgs e)
         {
             if (sender is BitmapImage bitmapImage && !bitmapImage.IsFrozen)
             {
@@ -114,7 +122,7 @@ namespace PackageExplorer
             }
         }
 
-        private void IconBitmapImage_DownloadOrDecodeFailed(object sender, System.Windows.Media.ExceptionEventArgs e)
+        private void IconBitmapImage_DownloadOrDecodeFailed(object? sender, System.Windows.Media.ExceptionEventArgs e)
         {
             // Fix the bitmap image cache to have default package icon, if some other failure didn't already do that.
             if (!(sender is BitmapImage bitmapImage))

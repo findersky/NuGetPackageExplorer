@@ -14,14 +14,17 @@ using PackageExplorerViewModel;
 namespace PackageExplorer
 {
 
-    public partial class PackageMetadataEditor : UserControl, IPackageEditorService
+    public sealed partial class PackageMetadataEditor : UserControl, IPackageEditorService
     {
         private ObservableCollection<FrameworkAssemblyReference> _frameworkAssemblies;
         private EditableFrameworkAssemblyReference _newFrameworkAssembly;
-        private ICollection<PackageDependencyGroup> _dependencySets;
+        private ICollection<PackageDependencyGroup> _dependencyGroups;
+        private ICollection<FrameworkReferenceGroup> _frameworkReferenceGroups;
         private ICollection<PackageReferenceSet> _referenceSets;
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         public PackageMetadataEditor()
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
             InitializeComponent();
             PopulateLanguagesForLanguageBox();
@@ -47,8 +50,9 @@ namespace PackageExplorer
         {
             var viewModel = (PackageViewModel)DataContext;
 
-            _dependencySets = viewModel.PackageMetadata.DependencySets;
+            _dependencyGroups = viewModel.PackageMetadata.DependencyGroups;
             _referenceSets = viewModel.PackageMetadata.PackageAssemblyReferences;
+            _frameworkReferenceGroups = viewModel.PackageMetadata.FrameworkReferenceGroups;
 
             _frameworkAssemblies = new ObservableCollection<FrameworkAssemblyReference>(viewModel.PackageMetadata.FrameworkAssemblies);
             FrameworkAssembliesList.ItemsSource = _frameworkAssemblies;
@@ -86,6 +90,7 @@ namespace PackageExplorer
 
         private void RemoveFrameworkAssemblyButtonClicked(object sender, RoutedEventArgs e)
         {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_RemoveFrameworkAssemblyButtonClicked");
             var button = (Button)sender;
             var item = (FrameworkAssemblyReference)button.DataContext;
 
@@ -94,6 +99,7 @@ namespace PackageExplorer
 
         private void AddFrameworkAssemblyButtonClicked(object sender, RoutedEventArgs args)
         {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_AddFrameworkAssemblyButtonClicked");
             AddPendingFrameworkAssembly();
         }
 
@@ -102,8 +108,14 @@ namespace PackageExplorer
         // return null = no pending asesmbly
         private bool? AddPendingFrameworkAssembly()
         {
-            if (string.IsNullOrEmpty(NewAssemblyName.Text) &&
-                string.IsNullOrEmpty(NewSupportedFramework.Text))
+            // Blank assembly name but content in the supported framework textbox is an error
+            if (string.IsNullOrWhiteSpace(NewAssemblyName.Text) && !string.IsNullOrWhiteSpace(NewSupportedFramework.Text))
+            {
+                return false;
+            }
+
+            // blank in both is ok, nothing to add
+            if (string.IsNullOrWhiteSpace(NewAssemblyName.Text))
             {
                 return null;
             }
@@ -122,7 +134,9 @@ namespace PackageExplorer
 
         private void EditDependenciesButtonClicked(object sender, RoutedEventArgs e)
         {
-            var editor = new PackageDependencyEditor(_dependencySets)
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_EditDependenciesButtonClicked");
+
+            var editor = new PackageDependencyEditor(_dependencyGroups)
             {
                 Owner = Window.GetWindow(this),
                 PackageChooser = PackageChooser
@@ -130,12 +144,14 @@ namespace PackageExplorer
             var result = editor.ShowDialog();
             if (result == true)
             {
-                _dependencySets = editor.GetEditedDependencySets();
+                _dependencyGroups = editor.GetEditedDependencySets();
             }
         }
 
         private void EditReferencesButtonClicked(object sender, RoutedEventArgs e)
         {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_EditReferencesButtonClicked");
+
             var editor = new PackageReferencesEditor(_referenceSets)
             {
                 Owner = Window.GetWindow(this),
@@ -148,20 +164,39 @@ namespace PackageExplorer
             }
         }
 
+        private void EditFrameworkReferencesButtonClicked(object sender, RoutedEventArgs e)
+        {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_EditFrameworkReferencesButtonClicked");
+
+            var editor = new FrameworkReferencesEditor(_frameworkReferenceGroups)
+            {
+                Owner = Window.GetWindow(this),
+                PackageChooser = PackageChooser
+            };
+            var result = editor.ShowDialog();
+            if (result == true)
+            {
+                _frameworkReferenceGroups = editor.GetEditedReferences();
+            }
+        }
+
         #region IPackageEditorService
 
         void IPackageEditorService.BeginEdit()
         {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_BeginEdit");
             PackageMetadataGroup.BeginEdit();
         }
 
         void IPackageEditorService.CancelEdit()
         {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_CancelEdit");
             PackageMetadataGroup.CancelEdit();
         }
 
         bool IPackageEditorService.CommitEdit()
         {
+            DiagnosticsClient.TrackEvent("PackageMetadataEditor_CommitEdit");
             var addPendingAssembly = AddPendingFrameworkAssembly();
             if (addPendingAssembly == false)
             {
@@ -172,8 +207,9 @@ namespace PackageExplorer
             if (valid)
             {
                 var viewModel = (PackageViewModel)DataContext;
-                viewModel.PackageMetadata.DependencySets = _dependencySets;
+                viewModel.PackageMetadata.DependencyGroups = _dependencyGroups;
                 viewModel.PackageMetadata.PackageAssemblyReferences = _referenceSets;
+                viewModel.PackageMetadata.FrameworkReferenceGroups = _frameworkReferenceGroups;
                 _frameworkAssemblies.CopyTo(viewModel.PackageMetadata.FrameworkAssemblies);
             }
 

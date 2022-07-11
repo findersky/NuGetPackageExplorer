@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Windows.Input;
 using NuGet.Packaging;
@@ -8,27 +9,27 @@ namespace PackageExplorerViewModel
 {
     public class FileEditorViewModel : ViewModelBase
     {
-        private readonly ICommand _closeCommand;
         private readonly IEditablePackageFile _fileInEdit;
+        private readonly IUIServices _uiServices;
         private readonly string _filePath;
         private readonly PackageViewModel _packageViewModel;
-        private readonly ICommand _saveCommand;
         private bool _hasEdit;
         private bool _hasSaved;
 
-        internal FileEditorViewModel(PackageViewModel packageViewModel, IEditablePackageFile fileInEdit)
+        internal FileEditorViewModel(PackageViewModel packageViewModel, IEditablePackageFile fileInEdit, IUIServices uiServices)
         {
             Debug.Assert(packageViewModel != null);
             Debug.Assert(fileInEdit != null);
 
             _packageViewModel = packageViewModel;
             _fileInEdit = fileInEdit;
+            _uiServices = uiServices;
 
             // Note: has to preserve the file name here so that the new file "appears" to be the same as old file
             _filePath = fileInEdit.OriginalPath ?? Path.Combine(FileHelper.GetTempFilePath(), fileInEdit.Name);
 
-            _closeCommand = new RelayCommand<IFileEditorService>(CloseExecute);
-            _saveCommand = new RelayCommand<IFileEditorService>(SaveExecute);
+            CloseCommand = new RelayCommand<IFileEditorService>(CloseExecute);
+            SaveCommand = new RelayCommand<IFileEditorService>(SaveExecute, CanSaveExecute);
         }
 
         public IPackageFile FileInEdit
@@ -44,17 +45,18 @@ namespace PackageExplorerViewModel
                 if (_hasEdit != value)
                 {
                     _hasEdit = value;
-                    OnPropertyChanged("HasEdit");
+                    OnPropertyChanged(nameof(HasEdit));
                 }
             }
         }
 
-        #region CloseCommand
-
-        public ICommand CloseCommand
+        public bool IsReadOnly
         {
-            get { return _closeCommand; }
+            get { return _packageViewModel.IsSigned; }
         }
+
+
+        public ICommand CloseCommand { get; }
 
         private void CloseExecute(IFileEditorService editorService)
         {
@@ -82,13 +84,11 @@ namespace PackageExplorerViewModel
             }
         }
 
-        #endregion
+        public ICommand SaveCommand { get; }
 
-        #region SaveCommand
-
-        public ICommand SaveCommand
+        private bool CanSaveExecute(IFileEditorService obj)
         {
-            get { return _saveCommand; }
+            return !IsReadOnly;
         }
 
         private void SaveExecute(IFileEditorService editorService)
@@ -103,12 +103,18 @@ namespace PackageExplorerViewModel
             _hasSaved = true;
         }
 
-        #endregion
-
         public void SaveOnExit(IFileEditorService editorService)
         {
-            SaveExecute(editorService);
-            PersitChanges();
+            try
+            {
+                SaveExecute(editorService);
+                PersitChanges();
+            }
+            catch (Exception e)
+            {
+                _uiServices.Show(e.Message, MessageLevel.Error);
+            }
+
         }
 
         private bool PersitChanges()

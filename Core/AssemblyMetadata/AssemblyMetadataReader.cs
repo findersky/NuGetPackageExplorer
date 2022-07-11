@@ -1,28 +1,36 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace NuGetPe.AssemblyMetadata
 {
     public static class AssemblyMetadataReader
     {
-        public static AssemblyMetaData ReadMetaData(string assemblyPath)
+        /// <summary>
+        /// Expects a PE file
+        /// </summary>
+        /// <param name="assemblyPath"></param>
+        /// <returns></returns>
+        public static AssemblyMetaDataInfo? ReadMetaData(string assemblyPath)
         {
-            if (assemblyPath == null)
+            if (string.IsNullOrWhiteSpace(assemblyPath))
             {
                 return null;
             }
 
-            var result = new AssemblyMetaData();
-
             var assemblyName = AssemblyName.GetAssemblyName(assemblyPath);
             if (assemblyName == null)
             {
-                return result;
+                return null;
             }
 
-            result.SetFullName(assemblyName);
+            var result = new AssemblyMetaDataInfo(assemblyName);
 
             // For WinRT component, we can only read Full Name. 
             if (assemblyName.ContentType == AssemblyContentType.WindowsRuntime)
@@ -32,11 +40,10 @@ namespace NuGetPe.AssemblyMetadata
 
             try
             {
-                using (var metadataParser = new AssemblyMetadataParser(assemblyPath))
-                {
-                    AddAssemblyAttributes(metadataParser, result);
-                    AddReferencedAssemblyInfo(metadataParser, result);
-                }
+                using var metadataParser = new AssemblyMetadataParser(assemblyPath);
+                AddAssemblyAttributes(metadataParser, result);
+                AddReferencedAssemblyInfo(metadataParser, result);
+                result.DebugData = metadataParser.GetDebugData();
             }
             catch
             {
@@ -46,7 +53,32 @@ namespace NuGetPe.AssemblyMetadata
             return result;
         }
 
-        private static void AddAssemblyAttributes(AssemblyMetadataParser parser, AssemblyMetaData result)
+        public static async Task<AssemblyDebugData> ReadDebugData(Stream? peStream, Stream pdbStream)
+        {
+            if (pdbStream is null)
+                throw new ArgumentNullException(nameof(pdbStream));
+
+            try
+            {
+                using var cts = new CancellationTokenSource();
+
+                return await Task.Run(() =>
+                {
+                    cts.CancelAfter(TimeSpan.FromSeconds(10));
+                    using var reader = new AssemblyDebugParser(peStream, pdbStream);
+                    return reader.GetDebugData();
+
+                }, cts.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                peStream?.Dispose();
+                pdbStream.Dispose();
+            }
+                  
+        }
+
+        private static void AddAssemblyAttributes(AssemblyMetadataParser parser, AssemblyMetaDataInfo result)
         {
             try
             {
@@ -68,12 +100,18 @@ namespace NuGetPe.AssemblyMetadata
             }
         }
 
-        private static string TryReadAttributeValue(AssemblyMetadataParser.AttributeInfo attribute)
+        private static string? TryReadAttributeValue(AssemblyMetadataParser.AttributeInfo attribute)
         {
             // Skip InternalsVisibleToAttribute
             if (attribute.FullTypeName.Equals(typeof(InternalsVisibleToAttribute).FullName, StringComparison.Ordinal))
             {
                 return null;
+            }
+
+            // Handle the metadata attrib
+            if (attribute.FullTypeName.Equals(typeof(AssemblyMetadataAttribute).FullName, StringComparison.Ordinal))
+            {
+                return $"Key = {attribute.FixedArguments[0].Value}, Value = {attribute.FixedArguments[1].Value}";
             }
 
             if (attribute.FixedArguments.Length != 1 || attribute.NamedArguments.Length > 0)
@@ -84,7 +122,7 @@ namespace NuGetPe.AssemblyMetadata
             var singleCtorParameter = attribute.FixedArguments[0];
             if (singleCtorParameter.Type.Equals(typeof(string).FullName, StringComparison.Ordinal))
             {
-                var strValue = singleCtorParameter.Value.ToString();
+                var strValue = singleCtorParameter.Value!.ToString();
                 return string.IsNullOrEmpty(strValue)
                     ? null
                     : strValue;
@@ -104,7 +142,7 @@ namespace NuGetPe.AssemblyMetadata
                 : shortName;
         }
 
-        private static void AddReferencedAssemblyInfo(AssemblyMetadataParser parser, AssemblyMetaData result)
+        private static void AddReferencedAssemblyInfo(AssemblyMetadataParser parser, AssemblyMetaDataInfo result)
         {
             try
             {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -9,6 +10,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using NuGetPackageExplorer.Types;
+using NuGetPe;
 using PackageExplorer.Properties;
 using PackageExplorerViewModel;
 
@@ -21,155 +23,72 @@ namespace PackageExplorer
     {
         private const string PackageFileDataFormat = "PackageFileContent";
 
-        private static readonly Dictionary<string, string[]> _frameworkFolders =
-            new Dictionary<string, string[]>
+        private static readonly List<(string displayName, string[] tfms)> FrameworkFolders = new List<(string, string[])>
             {
-                {
-                    "Portable Library",
-                    new string[0]
-                },
-                {
-                    "Native",
-                    new []
+                //see https://docs.microsoft.com/en-us/nuget/schema/target-frameworks
+                (
+                    ".NET",
+                    new[]
                     {
-                        "(no version)", "native"
+                        "v5.0","net5.0",
+                        "v5.0-android", "net5.0-android",
+                        "v5.0-ios", "net5.0-ios",
+                        "v5.0-macos", "net5.0-macos",
+                        "v5.0-tvos", "net5.0-tvos",
+                        "v5.0-watchos", "net5.0-watchos",
+                        "v5.0-windows", "net5.0-windows",
+
+                        "v6.0","net6.0",
+                        "v6.0-android", "net6.0-android",
+                        "v6.0-ios", "net6.0-ios",
+                        "v6.0-macos", "net6.0-macos",
+                        "v6.0-tvos", "net6.0-tvos",
+                        "v6.0-maccatalyst", "net6.0-maccatalyst",
+                        "v6.0-tizen", "net6.0-tizen",
+                        "v6.0-windows", "net6.0-windows",
                     }
-                },
-                {
-                    "ASP.NET 5",
-                    new []
-                    {
-                        "dnxcore", "dnxcore50",
-                        "dotnet5.4","dotnet5.4"
-                    }
-                },
+                ),
 
                 //see https://docs.microsoft.com/en-us/nuget/schema/target-frameworks
-                {
+                (
                     ".NET Core App",
                     new[]
                     {
                         "v1.0","netcoreapp1.0",
                         "v1.1","netcoreapp1.1",
                         "v2.0","netcoreapp2.0",
+                        "v2.1","netcoreapp2.1",
+                        "v2.2","netcoreapp2.2",
+                        "v3.0","netcoreapp3.0",
+                        "v3.1","netcoreapp3.1",
                     }
-                }
-                ,
+                ),
 
-                {
-                    "Tizen",
-                    new[]
-                    {
-                        "v3","tizen3",
-                        "v4","tizen4",
-                    }
-                }
-                ,
-
-                {
-                    "Mono",
-                    new[]
-                    {
-                        "Android", "MonoAndroid",
-                        "Mono", "Mono",
-                        "iOS", "MonoTouch",
-                        "OSX", "MonoMac"
-                    }
-                },
-                {
-                    //see https://docs.nuget.org/ndocs/schema/target-frameworks
-                    "Xamarin",
-                    new[]
-                    {
-                        "Mac", "xamarinmac",
-                        "iOS", "xamarinios",
-                        "Playstation 3", "xamarinpsthree",
-                        "Playstation 4", "xamarinpsfour",
-                        "PS Vita", "xamarinpsvita",
-                        "Watch OS", "xamarinwatchos",
-                        "TV OS", "xamarintvos",
-                        "XBox 360", "xamarinxboxthreesixty",
-                        "XBox One", "xamarinxboxone",
-                    }
-                },
-                {
-                    "Windows Phone (Windows Runtime)",
-                    new []
-                    {
-                        "(no version)", "wpa",
-                        "v8.1", "wpa81"
-                    }
-                },
-                  {
-                    "Windows Phone (appx)",
-                    new[] {
-                        "v8.1", "wpa81",
-                    }
-                },
-                {
-                    "Windows Phone (Silverlight)",
-                    new[] {
-                        "v7.0", "sl3-wp",
-                        "v7.1 (Mango)", "sl4-wp71",
-                        "v8.0", "wp8",
-                        "v8.1", "wp81"}
-                },
-
-                {
-                    "Silverlight",
-                    new[]
-                    {
-                        "(no version)", "sl",
-                        "v2.0", "sl2",
-                        "v3.0", "sl30",
-                        "v4.0", "sl40",
-                        "v5.0", "sl50"
-                    }
-                },
-                {
-                    "Windows Store",
-                    new[] {
-                        "(no version)", "netcore",
-                        "Windows 8", "netcore45",
-                        "Windows 8.1", "netcore451",
-                        "Windows 10", "uap10.0",
-                    }
-                },
-                {
-                    ".NET Client profile",
-                    new []
-                    {
-                        "v3.5 client", "net35-client",
-                        "v4.0 client", "net40-client"
-                    }
-                },
-
-                {
+                (
                     //see https://github.com/dotnet/corefx/blob/master/Documentation/architecture/net-platform-standard.md 
                     //and https://docs.microsoft.com/en-us/dotnet/articles/standard/library
                     ".NET Platform Standard",
                     new []
                     {
-                        ".NET Platform Standard 1.0","netstandard1.0",
-                        ".NET Platform Standard 1.1","netstandard1.1",
-                        ".NET Platform Standard 1.2","netstandard1.2",
-                        ".NET Platform Standard 1.3","netstandard1.3",
-                        ".NET Platform Standard 1.4","netstandard1.4",
-                        ".NET Platform Standard 1.5","netstandard1.5",
-                        ".NET Platform Standard 1.6","netstandard1.6",
-                        ".NET Platform Standard 2.0","netstandard2.0",
+                        ".NET Standard 1.0","netstandard1.0",
+                        ".NET Standard 1.1","netstandard1.1",
+                        ".NET Standard 1.2","netstandard1.2",
+                        ".NET Standard 1.3","netstandard1.3",
+                        ".NET Standard 1.4","netstandard1.4",
+                        ".NET Standard 1.5","netstandard1.5",
+                        ".NET Standard 1.6","netstandard1.6",
+                        ".NET Standard 2.0","netstandard2.0",
+                        ".NET Standard 2.1","netstandard2.1",
                     }
 
-                }
+                )
                 ,
 
-
-                {
-                    ".NET",
+                (
+                    ".NET Framework",
                     new[]
                     {
                         "(no version)", "net",
-                        "dotnet", "dotnet",
                         "v1.0", "net10",
                         "v1.1", "net11",
                         "v2.0", "net20",
@@ -184,18 +103,84 @@ namespace PackageExplorer
                         "v4.6.2", "net462",
                         "v4.7", "net47",
                         "v4.7.1", "net471",
+                        "v4.7.2", "net472",
+                        "v4.8", "net48"
                     }
-                }
+                )
+                
+                ,
+                (
+                    //see https://docs.nuget.org/ndocs/schema/target-frameworks
+                    "Xamarin",
+                    new[]
+                    {
+
+                        "Android", "MonoAndroid",
+                        "Mac", "xamarinmac",
+                        "iOS", "xamarinios",
+                        "Playstation 3", "xamarinpsthree",
+                        "Playstation 4", "xamarinpsfour",
+                        "PS Vita", "xamarinpsvita",
+                        "Watch OS", "xamarinwatchos",
+                        "TV OS", "xamarintvos",
+                        "XBox One", "xamarinxboxone",
+                    }
+                )
+                ,
+                (
+                    "Windows UWP",
+                    new[] {
+                        "Windows 10", "uap10.0"
+                    }
+                )
+                ,
+
+                (
+                    "Native",
+                    new []
+                    {
+                        "(no version)", "native"
+                    }
+                ),
+
+                (
+                    "Tizen",
+                    new[]
+                    {
+                        "v3","tizen3",
+                        "v4","tizen4",
+                    }
+                ),
+
+                (
+                    "Silverlight",
+                    new[]
+                    {
+                        "v5.0", "sl50"
+                    }
+                ),
+                (
+                    "Portable Library",
+                    Array.Empty<string>()
+                )
             };
 
+        private readonly ISettingsManager _settings;
+        private readonly IUIServices _messageBoxServices;
+
         private double _analysisPaneWidth = 250; // default width for package analysis pane
-        private TreeViewItem _dragItem;
+        private TreeViewItem? _dragItem;
         private System.Windows.Point _dragPoint;
         private bool _isDragging, _isPressing;
 
-        public PackageViewer(IUIServices messageBoxServices, IPackageChooser packageChooser)
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
+        public PackageViewer(ISettingsManager settings, IUIServices messageBoxServices, IPackageChooser packageChooser)
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
             InitializeComponent();
+
+            _settings = settings;
+            _messageBoxServices = messageBoxServices;
 
             PackageMetadataEditor.UIServices = messageBoxServices;
             PackageMetadataEditor.PackageChooser = packageChooser;
@@ -205,17 +190,15 @@ namespace PackageExplorer
 
         private PackageFolder RootFolder
         {
-            get { return (DataContext as PackageViewModel).RootFolder; }
+            get { return ((PackageViewModel)DataContext).RootFolder; }
         }
 
         private void FileContentContainer_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
-            var settings = Settings.Default;
-
             if ((bool)e.NewValue)
             {
-                ContentGrid.RowDefinitions[0].Height = new GridLength(settings.PackageContentHeight, GridUnitType.Star);
-                ContentGrid.RowDefinitions[2].Height = new GridLength(settings.ContentViewerHeight, GridUnitType.Star);
+                ContentGrid.RowDefinitions[0].Height = new GridLength(_settings.PackageContentHeight, GridUnitType.Star);
+                ContentGrid.RowDefinitions[2].Height = new GridLength(_settings.ContentViewerHeight, GridUnitType.Star);
                 ContentGrid.RowDefinitions[2].MinHeight = 150;
 
                 if (FileContentContainer.Content == null)
@@ -225,8 +208,8 @@ namespace PackageExplorer
             }
             else
             {
-                settings.PackageContentHeight = ContentGrid.RowDefinitions[0].Height.Value;
-                settings.ContentViewerHeight = ContentGrid.RowDefinitions[2].Height.Value;
+                _settings.PackageContentHeight = ContentGrid.RowDefinitions[0].Height.Value;
+                _settings.ContentViewerHeight = ContentGrid.RowDefinitions[2].Height.Value;
 
                 ContentGrid.RowDefinitions[2].Height = new GridLength(0, GridUnitType.Star);
                 ContentGrid.RowDefinitions[2].MinHeight = 0;
@@ -339,7 +322,7 @@ namespace PackageExplorer
 
         private void OnTreeViewItemDragOver(object sender, DragEventArgs e)
         {
-            PackageFolder folder;
+            PackageFolder? folder;
 
             if (sender is TreeViewItem item)
             {
@@ -373,7 +356,7 @@ namespace PackageExplorer
 
         private void OnTreeViewItemDrop(object sender, DragEventArgs e)
         {
-            PackageFolder folder = null;
+            PackageFolder? folder = null;
 
             if (sender is TreeViewItem item)
             {
@@ -397,7 +380,7 @@ namespace PackageExplorer
             if (sender is TreeViewItem item)
             {
                 // allow dragging file and folder
-                if (item.DataContext is PackagePart packagePart)
+                if (item.DataContext is PackagePart)
                 {
                     _dragItem = item;
                     _dragPoint = e.GetPosition(item);
@@ -413,25 +396,35 @@ namespace PackageExplorer
                 return;
             }
 
-            var item = sender as TreeViewItem;
-            if (item == _dragItem)
+            try
             {
-                var newPoint = e.GetPosition(item);
-                if (Math.Abs(newPoint.X - _dragPoint.X) >= SystemParameters.MinimumHorizontalDragDistance ||
-                    Math.Abs(newPoint.Y - _dragPoint.Y) >= SystemParameters.MinimumVerticalDragDistance)
+                var item = sender as TreeViewItem;
+                if (item == _dragItem && item != null)
                 {
-                    // initiate a dragging
-                    if (item.DataContext is PackagePart packagePart)
+                    var newPoint = e.GetPosition(item);
+                    if (Math.Abs(newPoint.X - _dragPoint.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+                        Math.Abs(newPoint.Y - _dragPoint.Y) >= SystemParameters.MinimumVerticalDragDistance)
                     {
-                        _isPressing = false;
-                        _isDragging = true;
+                        // initiate a dragging
+                        if (item.DataContext is PackagePart packagePart)
+                        {
+                            _isPressing = false;
+                            _isDragging = true;
 
-                        var data = CreateDataObject(packagePart);
-                        DragDrop.DoDragDrop(item, data, DragDropEffects.Copy | DragDropEffects.Move);
-                        ResetDraggingState();
+                            var data = CreateDataObject(packagePart);
+
+                            DiagnosticsClient.TrackEvent("PackageViewer_BeginDragDrop");
+
+                            DragDrop.DoDragDrop(item, data, DragDropEffects.Copy | DragDropEffects.Move);
+                            ResetDraggingState();
+                        }
                     }
                 }
             }
+            catch // Possible COM exception if already in progress, ignore
+            {
+            }
+
         }
 
         private void PackagesTreeViewItem_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -469,7 +462,7 @@ namespace PackageExplorer
 
         private void OnTreeViewItemCanPaste(object sender, CanExecuteRoutedEventArgs e)
         {
-            PackageFolder folder = null;
+            PackageFolder? folder = null;
 
             if (sender is TreeView treeView)
             {
@@ -481,17 +474,26 @@ namespace PackageExplorer
 
         private void OnTreeViewItemPaste(object sender, ExecutedRoutedEventArgs e)
         {
-            PackageFolder folder = null;
+            PackageFolder? folder = null;
 
             if (sender is TreeView treeView)
             {
                 folder = treeView.SelectedItem as PackageFolder;
             }
 
-            if (HandleDataObject(folder, Clipboard.GetDataObject(), true))
+            try
             {
-                e.Handled = true;
+                if (HandleDataObject(folder, Clipboard.GetDataObject(), true))
+                {
+                    e.Handled = true;
+                }
             }
+            catch (Exception ex)
+            {
+                // Suppress any COM errors coming from the paste
+                _messageBoxServices.Show(ex.Message, MessageLevel.Error);
+            }
+
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -502,7 +504,7 @@ namespace PackageExplorer
             }
         }
 
-        private bool CanHandleDataObject(PackageFolder folder, IDataObject data)
+        private bool CanHandleDataObject(PackageFolder? folder, IDataObject data)
         {
             if (DataContext is PackageViewModel model)
             {
@@ -542,7 +544,7 @@ namespace PackageExplorer
             return false;
         }
 
-        private bool HandleDataObject(PackageFolder folder, IDataObject data, bool copy)
+        private bool HandleDataObject(PackageFolder? folder, IDataObject data, bool copy)
         {
             if (!CanHandleDataObject(folder, data))
             {
@@ -557,7 +559,7 @@ namespace PackageExplorer
 
                     if (packagePart != null)
                     {
-                        folder = folder ?? RootFolder;
+                        folder ??= RootFolder;
 
                         if (packagePart is PackageFile file)
                         {
@@ -576,10 +578,9 @@ namespace PackageExplorer
             }
             if (data.GetDataPresent(NativeDragDrop.FileGroupDescriptorW))
             {
-                folder = folder ?? RootFolder;
+                folder ??= RootFolder;
 
-                var viewModel = DataContext as PackageViewModel;
-                viewModel.AddDraggedAndDroppedFileDescriptors(folder, NativeDragDrop.GetFileGroupDescriptorW(data));
+                PackageViewModel.AddDraggedAndDroppedFileDescriptors(folder, NativeDragDrop.GetFileGroupDescriptorW(data));
                 return true;
             }
             if (data.GetDataPresent(DataFormats.FileDrop))
@@ -587,7 +588,7 @@ namespace PackageExplorer
                 var value = data.GetData(DataFormats.FileDrop);
                 if (value is string[] filenames && filenames.Length > 0)
                 {
-                    var viewModel = DataContext as PackageViewModel;
+                    var viewModel = (PackageViewModel)DataContext;
                     viewModel.AddDraggedAndDroppedFiles(folder, filenames);
                     return true;
                 }
@@ -595,7 +596,8 @@ namespace PackageExplorer
             return false;
         }
 
-        private IDataObject CreateDataObject(PackagePart packagePart)
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
+        private static IDataObject CreateDataObject(PackagePart packagePart)
         {
             var data = new DataObject();
             data.SetData(PackageFileDataFormat, packagePart.Path);
@@ -603,9 +605,15 @@ namespace PackageExplorer
             if (packagePart is PackageFile packageFile)
             {
                 long? fileSize = null;
-                if (packageFile.OriginalPath != null)
+                if (packageFile.OriginalPath != null && File.Exists(packageFile.OriginalPath))
                 {
-                    fileSize = new FileInfo(packageFile.OriginalPath).Length;
+                    // Try to get the length, it may not really exist
+                    try
+                    {
+                        fileSize = new FileInfo(packageFile.OriginalPath).Length;
+                    }
+                    catch (FileNotFoundException)
+                    { }
                 }
 
                 data.SetData(NativeDragDrop.FileGroupDescriptorW, NativeDragDrop.CreateFileGroupDescriptorW(packageFile.Name, packageFile.LastWriteTime, fileSize));
@@ -620,46 +628,45 @@ namespace PackageExplorer
             var visibilityBinding = new Binding("Path")
             {
                 Converter = new StringToVisibilityConverter(),
-                ConverterParameter = "lib;content;tools;build;ref;contentFiles"
+                ConverterParameter = "lib;content;tools;build;buildMultiTargeting;buildTransitive;ref;contentFiles"
             };
 
             var commandBinding = new Binding("AddContentFolderCommand");
 
-            var addSeparator = menu.Items.Count > 0;
-            if (addSeparator)
-            {
-                var separator = new Separator();
-                separator.SetBinding(VisibilityProperty, visibilityBinding);
-                menu.Items.Insert(0, separator);
-            }
 
-            foreach (var pair in _frameworkFolders)
+
+            var menuItems = new List<object>();
+
+          
+
+
+            foreach (var pair in FrameworkFolders)
             {
                 var item = new MenuItem
                 {
-                    Header = string.Format(CultureInfo.CurrentCulture, "Add {0} folder", pair.Key),
+                    Header = string.Format(CultureInfo.CurrentCulture, "Add {0} folder", pair.displayName),
                     Visibility = Visibility.Collapsed
                 };
                 item.SetBinding(VisibilityProperty, visibilityBinding);
 
-                var values = pair.Value;
-                if (values.Length > 2)
+                var tfm = pair.tfms;
+                if (tfm.Length > 2)
                 {
-                    for (var i = 0; i < values.Length; i += 2)
+                    for (var i = 0; i < tfm.Length; i += 2)
                     {
                         var childItem = new MenuItem
                         {
-                            Header = values[i],
-                            CommandParameter = values[i + 1]
+                            Header = tfm[i],
+                            CommandParameter = tfm[i + 1]
                         };
                         childItem.SetBinding(MenuItem.CommandProperty, commandBinding);
                         item.Items.Add(childItem);
                     }
                 }
-                else if (values.Length == 2)
+                else if (tfm.Length == 2)
                 {
                     item.SetBinding(MenuItem.CommandProperty, commandBinding);
-                    item.CommandParameter = values[1];
+                    item.CommandParameter = tfm[1];
                 }
                 else
                 {
@@ -668,6 +675,21 @@ namespace PackageExplorer
                     item.CommandParameter = "portable";
                 }
 
+                menuItems.Insert(0, item);;
+            }
+
+            var addSeparator = menu.Items.Count > 0;
+            if (addSeparator)
+            {
+                var separator = new Separator();
+                separator.SetBinding(VisibilityProperty, visibilityBinding);
+                menuItems.Insert(0, separator);
+            }
+
+
+            // We use the list as an intermediate to reverse the order as we build it
+            foreach (var item in menuItems)
+            {
                 menu.Items.Insert(0, item);
             }
         }
@@ -675,7 +697,7 @@ namespace PackageExplorer
         private class LazyPackageFileStream : Stream
         {
             private readonly PackageFile _packageFile;
-            private Stream _inner;
+            private Stream? _inner;
 
             public LazyPackageFileStream(PackageFile packageFile)
             {
@@ -701,9 +723,31 @@ namespace PackageExplorer
 
             public override bool CanWrite => false;
 
-            public override long Length { get { InitStream(); return _inner.Length; } }
+            public override long Length
+            {
+                get
+                {
+                    InitStream();
+                    Debug.Assert(_inner != null, nameof(_inner) + " != null");
+                    return _inner.Length;
+                }
+            }
 
-            public override long Position { get { InitStream(); return _inner.Position; } set { InitStream(); _inner.Position = value; } }
+            public override long Position
+            {
+                get
+                {
+                    InitStream();
+                    Debug.Assert(_inner != null, nameof(_inner) + " != null");
+                    return _inner.Position;
+                }
+                set
+                {
+                    InitStream();
+                    Debug.Assert(_inner != null, nameof(_inner) + " != null");
+                    _inner.Position = value;
+                }
+            }
 
             public override void Flush() => throw new NotImplementedException();
 
@@ -711,12 +755,16 @@ namespace PackageExplorer
             {
                 InitStream();
 
+                Debug.Assert(_inner != null, nameof(_inner) + " != null");
+
                 return _inner.Read(buffer, offset, count);
             }
 
             public override long Seek(long offset, SeekOrigin origin)
             {
                 InitStream();
+
+                Debug.Assert(_inner != null, nameof(_inner) + " != null");
 
                 return _inner.Seek(offset, origin);
             }

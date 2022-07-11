@@ -9,15 +9,20 @@ namespace NuGetPe
 {
     public abstract class PackageFileBase : IPackageFile
     {
-        private readonly FrameworkName _targetFramework;
-
         protected PackageFileBase(string path)
         {
-            Path = path;
+            Path = path;            
+          
+            // make sure we switch to the directory char per platform for this check as ParseNuGetFrameworkFromFilePath looks for that
+            var nuf = FrameworkNameUtility.ParseNuGetFrameworkFromFilePath(path?.Replace('\\', System.IO.Path.DirectorySeparatorChar), out var effectivePath);
 
-            FrameworkNameUtility.ParseFrameworkNameFromFilePath(path, out var effectivePath);
-            _targetFramework = new FrameworkName(NuGetFramework.Parse(effectivePath).DotNetFrameworkName);
             EffectivePath = effectivePath;
+
+            NuGetFramework = nuf;
+            if(nuf != null)
+            {
+                TargetFramework = new FrameworkName(NuGetFramework.DotNetFrameworkName);
+            }                           
         }
 
         public string Path
@@ -26,7 +31,7 @@ namespace NuGetPe
             private set;
         }
 
-        public virtual string OriginalPath
+        public virtual string? OriginalPath
         {
             get
             {
@@ -42,26 +47,23 @@ namespace NuGetPe
             private set;
         }
 
-        public FrameworkName TargetFramework
-        {
-            get
-            {
-                return _targetFramework;
-            }
-        }
+        public FrameworkName? TargetFramework { get; }
+        public NuGetFramework? NuGetFramework { get; }
 
-        public IEnumerable<FrameworkName> SupportedFrameworks
+        public IEnumerable<NuGetFramework> SupportedFrameworks
         {
             get
             {
-                if (TargetFramework != null)
+                if (NuGetFramework != null)
                 {
-                    yield return TargetFramework;
+                    yield return NuGetFramework;
                 }
                 yield break;
             }
         }
 
         public virtual DateTimeOffset LastWriteTime { get; } = DateTimeOffset.MinValue;
+
+        
     }
 }

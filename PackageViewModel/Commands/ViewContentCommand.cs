@@ -3,9 +3,14 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Input;
+using AuthenticodeExaminer;
 using NuGetPackageExplorer.Types;
 using NuGetPe;
+using NuGetPe.Utility;
+
+using PeNet;
 
 namespace PackageExplorerViewModel
 {
@@ -18,9 +23,9 @@ namespace PackageExplorerViewModel
 
         #region ICommand Members
 
-        public event EventHandler CanExecuteChanged = delegate { };
+        public event EventHandler? CanExecuteChanged = delegate { };
 
-        public bool CanExecute(object parameter)
+        public bool CanExecute(object? parameter)
         {
             if (ViewModel.IsInEditFileMode)
             {
@@ -37,8 +42,10 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public void Execute(object parameter)
+        public void Execute(object? parameter)
         {
+            DiagnosticsClient.TrackEvent("ViewContentCommand");
+
             if ("Hide".Equals(parameter))
             {
                 ViewModel.ShowContentViewer = false;
@@ -53,6 +60,11 @@ namespace PackageExplorerViewModel
                     }
                     catch (Exception e)
                     {
+                        if (!(e is IOException))
+                        {
+                            DiagnosticsClient.TrackException(e, ViewModel.Package, ViewModel.PublishedOnNuGetOrg);
+                        }
+
                         ViewModel.UIServices.Show(e.Message, MessageLevel.Error);
                     }
 
@@ -64,53 +76,46 @@ namespace PackageExplorerViewModel
 
         public void RaiseCanExecuteChanged()
         {
-            CanExecuteChanged(this, EventArgs.Empty);
+            CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        [SuppressMessage(
-            "Microsoft.Design",
-            "CA1031:DoNotCatchGeneralExceptionTypes",
-            Justification = "We don't want plugin to crash the app.")]
         private void ShowFile(PackageFile file)
         {
-            object content = null;
+            object? content = null;
             var isBinary = false;
 
             // find all plugins which can handle this file's extension
             var contentViewers = FindContentViewer(file);
             if (contentViewers != null)
             {
-                isBinary = true;
                 try
                 {
                     // iterate over all plugins, looking for the first one that return non-null content
                     foreach (var viewer in contentViewers)
                     {
-                        using (var stream = file.GetStream())
+
+                        var files = file.GetAssociatedPackageFiles().ToList();
+
+                        content = viewer.GetView(file, files);
+                        if (content != null)
                         {
-                            content = viewer.GetView(Path.GetExtension(file.Name), stream);
-                            if (content != null)
-                            {
-                                // found a plugin that can read this file, stop
-                                break;
-                            }
+                            // found a plugin that can read this file, stop
+                            break;
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (!(ex is FileNotFoundException))
                 {
+                    DiagnosticsClient.TrackException(ex, ViewModel.Package, ViewModel.PublishedOnNuGetOrg);
                     // don't let plugin crash the app
                     content = Resources.PluginFailToReadContent + Environment.NewLine + ex.ToString();
                 }
 
-                if (content is string)
-                {
-                    isBinary = false;
-                }
+                isBinary = content is not string;
             }
 
             // if plugins fail to read this file, fall back to the default viewer
-            long size = -1;
+            var truncated = false;
             if (content == null)
             {
                 isBinary = FileHelper.IsBinaryFile(file.Name);
@@ -120,18 +125,42 @@ namespace PackageExplorerViewModel
                 }
                 else
                 {
-                    content = ReadFileContent(file, out size);
+                    content = ReadFileContent(file, out truncated);
                 }
             }
 
-            if (size == -1)
+            long size = -1;
+            IReadOnlyList<AuthenticodeSignature> sigs;
+            SignatureCheckResult isValidSig;
             {
-                // This is inefficient but cn be cleaned up later
-                using (var str = file.GetStream())
-                using (var ms = new MemoryStream())
+                // note: later, throught binding converter, SigningCertificate's CN value is extracted through native api
+                if (AppCompat.IsSupported(RuntimeFeature.Cryptography, RuntimeFeature.NativeMethods))
                 {
-                    str.CopyTo(ms);
-                    size = ms.Length;
+                    using var stream = file.GetStream();
+                    using var tempFile = new TemporaryFile(stream, Path.GetExtension(file.Name));
+                    var extractor = new FileInspector(tempFile.FileName);
+
+                    sigs = extractor.GetSignatures().ToList();
+                    isValidSig = extractor.Validate();
+                    size = tempFile.Length;
+                }
+                else
+                {
+                    using var stream = StreamUtility.MakeSeekable(file.GetStream(), disposeOriginal: true);
+                    var peFile = new PeFile(stream);
+                    var certificate = CryptoUtility.GetSigningCertificate(peFile);
+
+                    if (certificate is not null)
+                    {
+                        sigs = new List<AuthenticodeSignature>(0);
+                        isValidSig = SignatureCheckResult.UnknownProvider;
+                    }
+                    else
+                    {
+                        sigs = new List<AuthenticodeSignature>(0);
+                        isValidSig = SignatureCheckResult.NoSignature;
+                    }
+                    size = peFile.FileSize;
                 }
             }
 
@@ -140,7 +169,10 @@ namespace PackageExplorerViewModel
                 file.Path,
                 content,
                 !isBinary,
-                size);
+                size,
+                truncated,
+                sigs,
+                isValidSig);
 
             ViewModel.ShowFile(fileInfo);
         }
@@ -150,25 +182,38 @@ namespace PackageExplorerViewModel
             var extension = Path.GetExtension(file.Name);
 
             return from p in ViewModel.ContentViewerMetadata
+#if !NETSTANDARD2_1
                    where AppCompat.IsWindows10S ? p.Metadata.SupportsWindows10S : true // Filter out incompatible addins on 10s
+#endif
                    where p.Metadata.SupportedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase)
                    orderby p.Metadata.Priority
                    select p.Value;
         }
 
 
-        private static string ReadFileContent(PackageFile file, out long size)
+        private static string ReadFileContent(PackageFile file, out bool truncated)
         {
-            using (var stream = file.GetStream())
-            using (var ms = new MemoryStream())
-            using (var reader = new StreamReader(ms))
-            {
-                stream.CopyTo(ms);
-                size = ms.Length;
-                ms.Position = 0;
+            var buffer = new char[1024 * 32];
+            truncated = false;
+            using var stream = file.GetStream();
+            using var reader = new StreamReader(stream);
+            // Read 500 kb
+            const int maxBytes = 500 * 1024;
+            var sb = new StringBuilder();
 
-                return reader.ReadToEnd();
+            int bytesRead;
+
+            while ((bytesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sb.Append(buffer, 0, bytesRead);
+                if (sb.Length >= maxBytes)
+                {
+                    truncated = true;
+                    break;
+                }
             }
+
+            return sb.ToString();
         }
     }
 }

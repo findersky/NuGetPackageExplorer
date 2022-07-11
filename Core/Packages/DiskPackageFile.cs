@@ -15,10 +15,10 @@ namespace NuGetPe
 
         public override Stream GetStream()
         {
-            return File.OpenRead(OriginalPath);
+            return File.OpenRead(OriginalPath!);
         }
 
-        public override string OriginalPath { get; }
+        public override string? OriginalPath { get; }
 
         public override DateTimeOffset LastWriteTime
         {
@@ -26,7 +26,7 @@ namespace NuGetPe
             {
                 if (!_lastWriteTime.HasValue)
                 {
-                    _lastWriteTime = File.GetLastWriteTimeUtc(OriginalPath);
+                    _lastWriteTime = File.GetLastWriteTimeUtc(OriginalPath!);
                 }
                 return _lastWriteTime.Value;
             }

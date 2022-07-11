@@ -11,13 +11,19 @@
                 <ResourceDictionary Source="Xaml/MenuItems.xaml" />
                 <ResourceDictionary Source="Xaml/Toolbar.xaml" />
                 <ResourceDictionary Source="Xaml/PrefixReservedIndicator.xaml" />
+                <ResourceDictionary Source="Xaml/Icons.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Add this in so the designer finds these via StaticResource.
+                 The instance will be replaced during startup -->
+            <self:SettingsManager x:Key="Settings" />
 
             <self:IntegerToBooleanConverter x:Key="FontSizeToBoolConverter" />
             <self:BooleanToVisibilityConverter x:Key="invertedBoolToVis" Inverted="True" />
             <self:BooleanToVisibilityConverter x:Key="boolToVis" />
             <self:CountToVisibilityConverter x:Key="countConverter" />
             <self:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+            <self:NullToVisibilityConverter x:Key="InvertedNullToVisibilityConverter" Inverted="True" />
             <self:NullToBoolConverter x:Key="nullToBoolConverter" />
             <self:AndLogicConverter x:Key="andConverter" />
             <self:SubtracterConverter x:Key="SubtracterConverter" />
@@ -28,31 +34,87 @@
             <self:CertificateToSubjectConverter x:Key="CertificateToSubjectConverter" />
             <self:IconUrlToImageCacheConverter x:Key="IconUrlToImageCacheConverter" />
             <self:NumberToStringConverter x:Key="NumberToStringConverter" />
+            <self:EnumConverter x:Key="EnumConverter" />
+            <self:StringCollectionsToStringConverter x:Key="StringCollectionsToStringConverter" />
 
             <ContextMenu x:Key="TextBoxContextMenu">
                 <self:GrayscaleMenuItem Command="Cut">
                     <self:GrayscaleMenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/CutHS.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource CutIcon}" />
                     </self:GrayscaleMenuItem.Icon>
                 </self:GrayscaleMenuItem>
                 <self:GrayscaleMenuItem Command="Copy">
                     <self:GrayscaleMenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/CopyHS.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource CopyIcon}" />
                     </self:GrayscaleMenuItem.Icon>
                 </self:GrayscaleMenuItem>
                 <self:GrayscaleMenuItem Command="Paste">
                     <self:GrayscaleMenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/PasteHS.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource PasteIcon}" />
                     </self:GrayscaleMenuItem.Icon>
                 </self:GrayscaleMenuItem>
             </ContextMenu>
 
             <SolidColorBrush Color="#003399" x:Key="TaskDialogMainInstructionBrush" PresentationOptions:Freeze="True" />
 
+            <!-- from https://stackoverflow.com/questions/136435/any-way-to-make-a-wpf-textblock-selectable -->
+            <Style x:Key="SelectableTextBlockLikeStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                <Setter Property="IsReadOnly" Value="True"/>
+                <Setter Property="IsTabStop" Value="False"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="-2,0,0,0"/>
+                <!-- The Padding -2,0,0,0 is required because the TextBox
+        seems to have an inherent "Padding" of about 2 pixels.
+        Without the Padding property,
+        the text seems to be 2 pixels to the left
+        compared to a TextBlock
+    -->
+                <Style.Triggers>
+                    <MultiTrigger>
+                        <MultiTrigger.Conditions>
+                            <Condition Property="IsMouseOver" Value="False" />
+                            <Condition Property="IsFocused" Value="False" />
+                        </MultiTrigger.Conditions>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="{x:Type TextBox}">
+                                    <TextBlock Text="{TemplateBinding Text}" 
+                                               FontSize="{TemplateBinding FontSize}"
+                                               FontStyle="{TemplateBinding FontStyle}"
+                                               FontFamily="{TemplateBinding FontFamily}"
+                                               FontWeight="{TemplateBinding FontWeight}"
+                                               TextWrapping="{TemplateBinding TextWrapping}"
+                                               Foreground="{DynamicResource NormalText}"
+                                               Padding="0,0,0,0"
+                                    />
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </MultiTrigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- Clone of SelectableTextBlockLikeStyle, but without triggers -->
+            <Style x:Key="SelectableTextBlockLikeStyleWithoutTriggers" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                <Setter Property="IsReadOnly" Value="True"/>
+                <Setter Property="IsTabStop" Value="False"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="-2,0,0,0"/>
+                <!-- The Padding -2,0,0,0 is required because the TextBox
+        seems to have an inherent "Padding" of about 2 pixels.
+        Without the Padding property,
+        the text seems to be 2 pixels to the left
+        compared to a TextBlock
+    -->
+            </Style>
+
             <Style TargetType="{x:Type Image}" x:Key="ImageStyleBase">
                 <Setter Property="Width" Value="16" />
                 <Setter Property="Height" Value="16" />
                 <Setter Property="Stretch" Value="Uniform" />
+                <Setter Property="RenderOptions.BitmapScalingMode" Value="NearestNeighbor" />
             </Style>
 
             <Style TargetType="{x:Type self:GrayscaleImage}" BasedOn="{StaticResource ImageStyleBase}"></Style>

@@ -1,7 +1,14 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security;
 using NuGet.Versioning;
+
+#if WINDOWS
+using OSVersionHelper;
+using Windows.Storage;
+#endif
 
 namespace NuGetPe
 {
@@ -13,27 +20,25 @@ namespace NuGetPe
         // Maximum number of packages that can live in this cache.
         private const int MaxNumberOfPackages = 100;
         private const string NuGetCachePathEnvironmentVariable = "NuGetCachePath";
-        private static readonly MachineCache _default = new MachineCache();
-        private readonly string _cacheRoot;
 
         // Disable caching since we don't want to cache packages in memory
         private MachineCache()
         {
-            _cacheRoot = GetCachePath();
+            Source = new DirectoryInfo(GetCachePath());
+            if (!Source.Exists)
+            {
+                Source.Create();
+            }
         }
 
-        public static MachineCache Default
-        {
-            get { return _default; }
-        }
+        public static MachineCache Default { get; } = new MachineCache();
 
-        public string Source
-        {
-            get { return _cacheRoot; }
-        }
+        public DirectoryInfo Source { get; }
 
-        public ISignaturePackage FindPackage(string packageId, NuGetVersion version)
+        public ISignaturePackage? FindPackage(string packageId, NuGetVersion version)
         {
+            if (version is null)
+                throw new ArgumentNullException(nameof(version));
             var path = GetPackageFilePath(packageId, version);
 
             if (File.Exists(path))
@@ -48,79 +53,78 @@ namespace NuGetPe
 
         public void AddPackage(IPackage package)
         {
+            if (package is null)
+                throw new ArgumentNullException(nameof(package));
             // if the package is already present in the cache, no need to do anything
-            if (FindPackage(package.Id, package.Version) != null)
+            using var pkg = FindPackage(package.Id, package.Version);
+            if (pkg != null)
             {
                 return;
             }
 
-            // create the cache directory if it doesn't exist
-            var cacheDirectory = new DirectoryInfo(Source);
-            if (!cacheDirectory.Exists)
-            {
-                cacheDirectory.Create();
-            }
-
             // don't want to blow up user's hard drive with too many packages
-            ClearCache(cacheDirectory, MaxNumberOfPackages);
+            ClearCache(MaxNumberOfPackages);
 
             // now copy the package to the cache
             var filePath = GetPackageFilePath(package.Id, package.Version);
-            using (Stream stream = package.GetStream(),
-                          fileStream = File.Create(filePath))
+            using Stream stream = package.GetStream(),
+                          fileStream = File.Create(filePath);
+            if (stream != null)
             {
-                if (stream != null)
-                {
-                    stream.CopyTo(fileStream);
-                }
+                stream.CopyTo(fileStream);
             }
         }
 
-        private static void ClearCache(DirectoryInfo cacheDirectory, int threshold)
+        private void ClearCache(int threshold)
         {
-            // If we exceed the package count then clear the cache
-            var packageFiles = cacheDirectory.GetFiles("*" + Constants.PackageExtension,
-                                                              SearchOption.TopDirectoryOnly);
-            var totalFileCount = packageFiles.Length;
-            if (totalFileCount >= threshold)
+            try
             {
-                foreach (var packageFile in packageFiles)
+                // If we exceed the package count then clear the cache
+                var packageFiles = Source.GetFiles("*" + Constants.PackageExtension,
+                                                   SearchOption.TopDirectoryOnly)
+                                         .Concat(Source.GetFiles("*" + Constants.SymbolPackageExtension,
+                                                                 SearchOption.TopDirectoryOnly))
+                                         .ToList();
+
+                var totalFileCount = packageFiles.Count;
+                if (totalFileCount >= threshold)
                 {
-                    try
+                    foreach (var packageFile in packageFiles)
                     {
-                        if (packageFile.Exists)
+                        try
                         {
-                            packageFile.Delete();
+                            if (packageFile.Exists)
+                            {
+                                packageFile.Delete();
+                            }
                         }
-                    }
-                    catch (IOException)
-                    {
-                    }
-                    catch (SecurityException)
-                    {
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
+                        catch (IOException)
+                        {
+                        }
+                        catch (SecurityException)
+                        {
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                        }
                     }
                 }
             }
+            catch (IOException)
+            {
+            }
+
         }
 
         public bool Clear()
         {
-            var dirInfo = new DirectoryInfo(_cacheRoot);
-            if (dirInfo.Exists)
-            {
-                ClearCache(dirInfo, threshold: 0);
-                return true;
-            }
-
-            return false;
+            ClearCache(threshold: 0);
+            return true;
         }
 
         private string GetPackageFilePath(string id, NuGetVersion version)
         {
-            return Path.Combine(Source, id + "." + version.ToNormalizedString() + Constants.PackageExtension);
+            return Path.Combine(Source.FullName, id + "." + version.ToNormalizedString() + Constants.PackageExtension);
         }
 
         /// <summary>
@@ -129,10 +133,36 @@ namespace NuGetPe
         /// </summary>
         private static string GetCachePath()
         {
+#if WINDOWS
+            // Try getting it from the app model first
+            if (WindowsVersionHelper.HasPackageIdentity)
+            {
+                try
+                {
+                    return GetCachePathFromLocalCache();
+                }
+                catch
+                {
+                    // Don't care here, not on Win7 or running in an app model context
+                }
+            }
+#endif
+
             return GetCachePath(Environment.GetEnvironmentVariable, Environment.GetFolderPath);
         }
 
-        private static string GetCachePath(Func<string, string> getEnvironmentVariable, Func<Environment.SpecialFolder, string> getFolderPath)
+#if WINDOWS
+        // Don't load these types inline
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static string GetCachePathFromLocalCache()
+        {
+            // Get the localized special folder for local app data
+            var local = new DirectoryInfo(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)).Name;
+            return GetCachePath(Environment.GetEnvironmentVariable, _ => Path.Combine(ApplicationData.Current.LocalCacheFolder.Path, local));
+        }
+#endif
+
+        private static string GetCachePath(Func<string, string?> getEnvironmentVariable, Func<Environment.SpecialFolder, string> getFolderPath)
         {
             var cacheOverride = getEnvironmentVariable(NuGetCachePathEnvironmentVariable);
             if (!string.IsNullOrEmpty(cacheOverride))
@@ -141,11 +171,7 @@ namespace NuGetPe
             }
             else
             {
-                var localAppDataPath = getFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                if (string.IsNullOrEmpty(localAppDataPath))
-                {
-                    return null;
-                }
+                var localAppDataPath = getFolderPath(Environment.SpecialFolder.LocalApplicationData);                
                 return Path.Combine(localAppDataPath, "NuGet", "Cache");
             }
         }

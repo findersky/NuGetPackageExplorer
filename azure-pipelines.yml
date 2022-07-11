@@ -1,0 +1,283 @@
+trigger:
+- main
+- rel/*
+
+pr:
+- main
+- rel/*
+
+stages:
+- stage: Build
+  variables:
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+    BuildConfiguration: Release
+  jobs:
+  - job: Build
+    pool:
+      vmImage: windows-2022
+    strategy:
+      matrix:
+        Channel_Zip:
+          ReleaseChannel: Zip
+        Channel_Store:
+          ReleaseChannel: Store
+        Channel_Nightly:
+          ReleaseChannel: Nightly
+        Channel_Choco:
+          ReleaseChannel: Choco
+        Channel_WebAssembly:
+          ReleaseChannel: WebAssembly
+        Channel_UnoSkia:
+          ReleaseChannel: UnoSkia
+
+    steps:
+        
+    - task: UseDotNet@2
+      displayName: 'Use .NET 6 SDK'
+      inputs:
+        version: 6.x
+
+    #- pwsh: |
+    #    $branch = "release/5.0.1xx"
+    #    $scriptPath = Join-Path $env:AGENT_TOOLSDIRECTORY dotnet-install.ps1
+    #    Invoke-WebRequest -OutFile $scriptPath https://raw.githubusercontent.com/dotnet/install-scripts/master/src/dotnet-install.ps1
+    #    &"$scriptPath" -Channel $branch
+
+    #    $configFile = Join-Path $env:AGENT_TOOLSDIRECTORY NuGet-darc.config
+    #    # Get the darc feeds needed
+    #    Invoke-WebRequest -OutFile $configFile "https://raw.githubusercontent.com/dotnet/installer/$branch/NuGet.config"
+
+    #    [xml]$nugetConfig = Get-Content $configFile
+    #    $darcNodes = $nugetConfig.SelectNodes("/configuration/packageSources/add[starts-with(@key, 'darc-')]")
+        
+    #    $installationPath = Join-Path $env:AGENT_TOOLSDIRECTORY dotnet
+
+    #    Write-Host "##vso[task.setvariable variable=DOTNET_ROOT]$installationPath"
+
+    #    # Enable multi-level lookup to fall back to the built-in SDK's for older versions. Set to 0 to disable
+    #    Write-Host "##vso[task.setvariable variable=DOTNET_MULTILEVEL_LOOKUP]1"
+
+    #    # Make sure the new path is propagated back to the main host process 
+    #    Write-Host "##vso[task.setvariable variable=PATH]$env:PATH"
+
+    #    # Add the nightly NuGet feeds to the nuget config starting with the darc nodes
+    #    foreach ($feed in $darcNodes) {
+    #      $key = $feed.attributes['key'].value
+    #      $value = $feed.attributes['value'].value
+
+    #      Write-Host "Adding DARC feed '$key': $value"
+    #      dotnet nuget add source $value -n $key
+    #    }
+
+    #    dotnet nuget add source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet5/nuget/v3/index.json -n dotnet5        
+
+    #  displayName: Intall .NET 5.0 SDK
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: custom
+        custom: tool
+        arguments: install --tool-path . nbgv
+      displayName: Install NBGV tool
+
+    - script: nbgv cloud -c -a
+      displayName: Set Version
+
+    - powershell: |
+        mkdir $(Build.ArtifactStagingDirectory)\$(ReleaseChannel)
+
+        # Set versions
+
+        # Update appxmanifests. These must be done before build.
+        [xml]$manifest = Get-Content ".\PackageExplorer.Package\package.appxmanifest"
+        $manifest.Package.Identity.Version = "$(GitBuildVersionSimple).0"
+        $manifest.Save(".\PackageExplorer.Package\package.appxmanifest")
+
+        [xml]$manifest = Get-Content ".\PackageExplorer.Package\Package-Nightly.appxmanifest"
+        $manifest.Package.Identity.Version = "$(GitBuildVersionSimple).0"
+        $manifest.Save(".\PackageExplorer.Package\Package-Nightly.appxmanifest")
+
+        # Update badges
+        [xml]$badge = Get-Content ".\Build\ci_badge.svg"
+        $badge.svg.g[1].text[2].InnerText = "$(GitBuildVersionSimple).0"
+        $badge.svg.g[1].text[3].InnerText = "$(GitBuildVersionSimple).0"
+        $badge.Save("$(Build.ArtifactStagingDirectory)\$(ReleaseChannel)\ci_badge.svg")
+
+        [xml]$badge = Get-Content ".\Build\store_badge.svg"
+        $badge.svg.g[1].text[2].InnerText = "$(GitBuildVersionSimple).0"
+        $badge.svg.g[1].text[3].InnerText = "$(GitBuildVersionSimple).0"
+        $badge.Save("$(Build.ArtifactStagingDirectory)\$(ReleaseChannel)\stable_badge.svg")
+      displayName: Update manifest and badge versions
+
+    - powershell: |
+        # Update App Insights key
+        [xml]$doc = Get-Content ".\PackageExplorer\ApplicationInsights.config"
+        $doc.ApplicationInsights.ConnectionString = "$(AppInsightsKey)"
+        $doc.Save(".\PackageExplorer\ApplicationInsights.config")
+
+      displayName: Set AppInsights Config
+      env:
+        AppInsightsKey: $(AppInsightsKey)
+      condition: and(succeeded(), not(eq(variables['build.reason'], 'PullRequest')), not(eq(variables['AppInsightsKey'], '')))
+
+    - task: MSBuild@1
+      displayName: Build Package
+      inputs:
+        solution: PackageExplorer.Package/PackageExplorer.Package.wapproj
+        msbuildArguments: /restore /p:AppxPackageDir="$(Build.ArtifactStagingDirectory)\$(ReleaseChannel)\\" /bl:$(Build.ArtifactStagingDirectory)\Logs\$(ReleaseChannel).binlog
+        configuration: $(BuildConfiguration)
+        maximumCpuCount: true
+      condition: and(succeeded(), or(eq(variables['ReleaseChannel'], 'Nightly'), eq(variables['ReleaseChannel'], 'Store')))
+
+    - task: DotNetCoreCLI@2
+      displayName: Build for Zip and Choco
+      inputs:
+        command: publish
+        projects: 'PackageExplorer/NuGetPackageExplorer.csproj'
+        arguments: -c $(BuildConfiguration) /p:PublishProfile=Properties/PublishProfiles/WinX64.pubxml /bl:$(Build.ArtifactStagingDirectory)\Logs\$(ReleaseChannel).binlog
+        zipAfterPublish: false
+        modifyOutputPath: false
+        publishWebProjects: false
+      condition: and(succeeded(), or(eq(variables['ReleaseChannel'], 'Zip'), eq(variables['ReleaseChannel'], 'Choco')))
+
+    - task: DotNetCoreCLI@2
+      displayName: Pack Libraries as Package
+      inputs:
+        command: pack
+        arguments: /bl:$(Build.ArtifactStagingDirectory)\Logs\Libraries.binlog
+        packagesToPack: '**/*.csproj;!**/NuGetPackageExplorer.csproj;!**/*.macOS.csproj'
+        configuration: $(BuildConfiguration)
+        packDirectory: $(Build.ArtifactStagingDirectory)\$(ReleaseChannel)\NuGet
+      condition: and(succeeded(), eq(variables['ReleaseChannel'], 'Zip'))
+
+    - powershell: |
+        # Chocolatey
+        & choco.exe pack .\PackageExplorer\NuGetPackageExplorer.nuspec --version $(NBGV_ChocolateyPackageVersion) --OutputDirectory $(Build.ArtifactStagingDirectory)\$(ReleaseChannel)
+      displayName: Create Choco package
+      condition: and(succeeded(), eq(variables['ReleaseChannel'], 'Choco'))
+
+    - task: ArchiveFiles@1
+      displayName: Zip Windows PackageExplorer files
+      inputs:
+        archiveType: zip
+        rootFolder: PackageExplorer/bin/$(BuildConfiguration)/net6.0-windows10.0.19041/win-x64/publish
+        archiveFile: $(Build.ArtifactStagingDirectory)\$(ReleaseChannel)\PackageExplorer.$(Build.BuildNumber).zip
+        includeRootFolder: false
+      condition: and(succeeded(), eq(variables['ReleaseChannel'], 'Zip'))
+
+    - task: MSBuild@1
+      displayName: Build Uno Apps
+      inputs:
+        solution: $(build.sourcesdirectory)/NuGetPackageExplorer-uno.slnf
+        msbuildArguments: /r /p:Configuration=Release /p:UNO_BUILD_ONLY=true /p:NpeAiInstrumentationKey=$(AppInsightsKeyWebAssembly) /bl:$(Build.ArtifactStagingDirectory)\Logs\$(ReleaseChannel).binlog
+        maximumCpuCount: true
+      condition: and(succeeded(), or(eq(variables['ReleaseChannel'], 'Nightly'), eq(variables['ReleaseChannel'], 'WebAssembly'), eq(variables['ReleaseChannel'], 'UnoSkia')))
+
+    - task: ArchiveFiles@1
+      displayName: Zip Gtk PackageExplorer files
+      inputs:
+        archiveType: zip
+        rootFolder: $(build.sourcesdirectory)/Uno/NuGetPackageExplorer.Skia.Gtk/bin/Release/net6.0
+        archiveFile: $(Build.ArtifactStagingDirectory)\$(ReleaseChannel)\PackageExplorer.Skia.Gtk.$(Build.BuildNumber).zip
+        includeRootFolder: false
+      condition: and(succeeded(), eq(variables['ReleaseChannel'], 'UnoSkia'))
+
+    - task: CopyFiles@2
+      displayName: Copy WebAssembly Package
+      inputs:
+        SourceFolder: '$(build.sourcesdirectory)/Uno/NuGetPackageExplorer.Wasm/bin/Release/net6.0/dist'
+        Contents: '**'
+        TargetFolder: $(build.artifactstagingdirectory)\$(ReleaseChannel)
+        CleanTargetFolder: false
+        OverWrite: false
+        flattenFolders: false
+      condition: and(succeeded(), eq(variables['ReleaseChannel'], 'WebAssembly'))
+
+    - publish: '$(build.sourcesdirectory)/Uno/Api'
+      displayName: Publish Cors bypass Azure Function
+      artifact: CorsAzureFunction
+      condition: and(succeeded(), eq(variables['ReleaseChannel'], 'WebAssembly'))
+
+    - publish: $(Build.ArtifactStagingDirectory)\$(ReleaseChannel)
+      displayName: Publish Build Packages
+      artifact: $(ReleaseChannel)
+  
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)\Logs
+        artifactName: Logs    
+      displayName: Publish Build Logs      
+      condition: always()
+
+    - publish: Build
+      displayName: Publish signing scripts
+      artifact: SigningScripts
+
+- stage: CodeSign
+  condition: and(succeeded('Build'), not(eq(variables['build.reason'], 'PullRequest')))
+  jobs:
+  - deployment: CodeSign
+    displayName: Code Signing
+    pool:
+      vmImage: windows-latest
+    environment: Code Sign - CI
+    variables:
+    - group: NuGet Package Explorer Sign Client
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Zip Artifacts
+            inputs:
+              artifactName: Zip
+              targetPath: $(Pipeline.Workspace)/ToSign/Zip
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Choco Artifacts
+            inputs:
+              artifactName: Choco
+              targetPath: $(Pipeline.Workspace)/ToSign/Choco
+
+          - task: DownloadPipelineArtifact@2
+            displayName: Download Nightly Artifacts
+            inputs:
+              artifactName: Nightly
+              targetPath: $(Pipeline.Workspace)/ToSign/Nightly
+
+          - download: current
+            artifact: SigningScripts
+
+          - task: DotNetCoreCLI@2
+            inputs:
+              command: custom
+              custom: tool
+              arguments: install --tool-path . SignClient
+            displayName: Install SignTool tool
+
+          - pwsh: |
+              .\SignClient "Sign" `
+              --baseDirectory "$(Pipeline.Workspace)\ToSign" `
+              --input "**/*.{appxbundle,appinstaller,zip,nupkg}" `
+              --config "$(Pipeline.Workspace)\SigningScripts\appsettings.json" `
+              --filelist "$(Pipeline.Workspace)\SigningScripts\filelist.txt" `
+              --user "$(SignClientUser)" `
+              --secret '$(SignClientSecret)' `
+              --name "NuGet Package Explorer" `
+              --description "NuGet Package Explorer" `
+              --descriptionUrl "https://github.com/NuGetPackageExplorer/NuGetPackageExplorer"
+            displayName: Authenticode Sign artifacts
+
+          - publish: $(Pipeline.Workspace)/ToSign/Zip
+            displayName: Publish Signed Zip Packages
+            artifact: ZipSigned
+
+          - publish: $(Pipeline.Workspace)/ToSign/Choco
+            displayName: Publish Signed Choco Packages
+            artifact: ChocoSigned
+
+          - publish: $(Pipeline.Workspace)/ToSign/Nightly
+            displayName: Publish Signed Choco Packages
+            artifact: NightlySigned
+

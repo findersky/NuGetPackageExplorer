@@ -14,7 +14,6 @@ namespace PackageExplorerViewModel
         private readonly INuGetPackageDownloader _packageDownloader;
         private readonly IPluginManager _pluginManager;
         private readonly IUIServices _uiServices;
-        private SortedCollection<PluginInfo> _plugins;
 
         public PluginManagerViewModel(
             IPluginManager pluginManager,
@@ -22,51 +21,29 @@ namespace PackageExplorerViewModel
             IPackageChooser packageChooser,
             INuGetPackageDownloader packageDownloader)
         {
-            _pluginManager = pluginManager ?? throw new ArgumentNullException("pluginManager");
-            _uiServices = uiServices ?? throw new ArgumentNullException("uiServices");
-            _packageChooser = packageChooser ?? throw new ArgumentNullException("packageChooser");
-            _packageDownloader = packageDownloader ?? throw new ArgumentNullException("packageDownloader");
+            _pluginManager = pluginManager ?? throw new ArgumentNullException(nameof(pluginManager));
+            _uiServices = uiServices ?? throw new ArgumentNullException(nameof(uiServices));
+            _packageChooser = packageChooser ?? throw new ArgumentNullException(nameof(packageChooser));
+            _packageDownloader = packageDownloader ?? throw new ArgumentNullException(nameof(packageDownloader));
 
             DeleteCommand = new RelayCommand<PluginInfo>(DeleteCommandExecute, DeleteCommandCanExecute);
             AddCommand = new RelayCommand<string>(AddCommandExecute);
+
+            Plugins = new SortedCollection<PluginInfo>(_pluginManager.Plugins, this);
         }
 
         public ICollection<PluginInfo> Plugins
         {
-            get
-            {
-                if (_plugins == null)
-                {
-                    _plugins = new SortedCollection<PluginInfo>(_pluginManager.Plugins, this);
-                }
-                return _plugins;
-            }
+            get;
         }
 
         public RelayCommand<PluginInfo> DeleteCommand { get; private set; }
 
         public RelayCommand<string> AddCommand { get; private set; }
 
-        #region IComparer<PluginInfo> Members
+        public int Compare(PluginInfo? x, PluginInfo? y) => Comparer<PluginInfo>.Default.Compare(x, y);
 
-        public int Compare(PluginInfo x, PluginInfo y)
-        {
-            var result = string.Compare(x.Id, y.Id, StringComparison.CurrentCultureIgnoreCase);
-            if (result != 0)
-            {
-                return result;
-            }
-
-            return x.Version.CompareTo(y.Version);
-        }
-
-        #endregion
-
-        #region INotifyPropertyChanged Members
-
-        public event PropertyChangedEventHandler PropertyChanged = delegate { };
-
-        #endregion
+        public event PropertyChangedEventHandler? PropertyChanged = delegate { };
 
         private async void AddCommandExecute(string parameter)
         {
@@ -92,18 +69,21 @@ namespace PackageExplorerViewModel
             if (selectedPackageInfo != null)
             {
                 var repository = _packageChooser.PluginRepository;
-
-                IPackage package = await _packageDownloader.Download(
+                if (repository != null)
+                {
+                    var package = await _packageDownloader.Download(
                     repository,
                     selectedPackageInfo.Identity);
 
-                if (package != null)
-                {
-                    AddSelectedPluginPackage(package);
+                    if (package != null)
+                    {
+                        AddSelectedPluginPackage(package);
+                    }
                 }
             }
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddLocalPlugin()
         {
             var result = _uiServices.OpenFileDialog(
@@ -113,7 +93,15 @@ namespace PackageExplorerViewModel
 
             if (result)
             {
-                AddSelectedPluginPackage(new ZipPackage(selectedFile));
+                try
+                {
+                    AddSelectedPluginPackage(new ZipPackage(selectedFile));
+                }
+                catch (Exception e)
+                {
+                    _uiServices.Show(e.Message, MessageLevel.Error);
+                }
+
             }
         }
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
@@ -8,10 +9,11 @@ using System.Windows.Input;
 using NuGet.Common;
 using NuGet.Packaging.Signing;
 using NuGetPackageExplorer.Types;
+using NuGetPe;
 
 namespace PackageExplorerViewModel
 {
-    public class SignPackageViewModel : ViewModelBase, IDisposable
+    public sealed class SignPackageViewModel : ViewModelBase, IDisposable
     {
         // https://github.com/NuGet/NuGet.Client/blob/a05632928e11d51b81d2299ba071334a16ce17a9/src/NuGet.Core/NuGet.Commands/SignCommand/CertificateProvider.cs#L22
         private const int ERROR_INVALID_PASSWORD_HRESULT = unchecked((int)0x80070056);
@@ -19,25 +21,25 @@ namespace PackageExplorerViewModel
         private readonly PackageViewModel _packageViewModel;
         private readonly IUIServices _uiServices;
         private readonly ISettingsManager _settingsManager;
-        private string _certificateFileName;
-        private X509Certificate2 _certificate;
-        private string _password;
+        private string? _certificateFileName;
+        private X509Certificate2? _certificate;
+        private string? _password;
         private bool _showPassword;
         private HashAlgorithmName _hashAlgorithmName = HashAlgorithmName.SHA256;
-        private string _timestampServer;
-        private string _status;
+        private string? _timestampServer;
+        private string? _status;
         private bool _hasError;
         private bool _showProgress;
         private bool _canSign;
-        private CancellationTokenSource _cts;
-        private Timer _certificateValidationTimer;
-        private SemaphoreSlim _certificateValidationSemaphore;
+        private CancellationTokenSource? _cts;
+        private Timer? _certificateValidationTimer;
+        private SemaphoreSlim? _certificateValidationSemaphore;
 
         public SignPackageViewModel(PackageViewModel viewModel, IUIServices uiServices, ISettingsManager settingsManager)
         {
-            _uiServices = uiServices;
-            _settingsManager = settingsManager;
-            _packageViewModel = viewModel;
+            _uiServices = uiServices ?? throw new ArgumentNullException(nameof(uiServices));
+            _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            _packageViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 
             SelectCertificateFileCommand = new RelayCommand(SelectCertificateFileCommandExecute);
             SelectCertificateStoreCommand = new RelayCommand(SelectCertificateStoreCommandExecute);
@@ -53,17 +55,15 @@ namespace PackageExplorerViewModel
                 {
                     try
                     {
-                        using (var store = new X509Store(StoreName.My, StoreLocation.CurrentUser))
+                        using var store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+                        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+
+                        var certificates = store.Certificates.Find(X509FindType.FindByThumbprint, settingsManager.SigningCertificate, validOnly: true);
+
+                        if (certificates.Count > 0)
                         {
-                            store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
-
-                            var certificates = store.Certificates.Find(X509FindType.FindByThumbprint, settingsManager.SigningCertificate, validOnly: true);
-
-                            if (certificates.Count > 0)
-                            {
-                                Certificate = certificates[0];
-                                CertificateFileName = null;
-                            }
+                            Certificate = certificates[0];
+                            CertificateFileName = null;
                         }
                     }
                     catch { }
@@ -82,7 +82,7 @@ namespace PackageExplorerViewModel
 
         public string Version => _packageViewModel.PackageMetadata.Version.ToFullString();
 
-        public string CertificateFileName
+        public string? CertificateFileName
         {
             get => _certificateFileName;
             set
@@ -93,7 +93,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public X509Certificate2 Certificate
+        public X509Certificate2? Certificate
         {
             get => _certificate;
             set
@@ -108,7 +108,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public string Password
+        public string? Password
         {
             get => _password;
             set
@@ -140,7 +140,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public IEnumerable<HashAlgorithmName> ValidHashAlgorithmNames
+        public static IEnumerable<HashAlgorithmName> ValidHashAlgorithmNames
         {
             get
             {
@@ -150,7 +150,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public string TimestampServer
+        public string? TimestampServer
         {
             get => _timestampServer;
             set
@@ -179,7 +179,7 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public string Status
+        public string? Status
         {
             get => _status;
             set
@@ -214,6 +214,8 @@ namespace PackageExplorerViewModel
 
         private void SelectCertificateFileCommandExecute()
         {
+            DiagnosticsClient.TrackEvent("SignPackageViewModel_SelectCertificateFileCommandExecute");
+
             if (_uiServices.OpenFileDialog(Resources.SelectCertificate, "Certificate (*.pfx, *.p12)|*.pfx;*.p12|All files (*.*)|*.*", out var fileName))
             {
                 CertificateFileName = fileName;
@@ -222,65 +224,75 @@ namespace PackageExplorerViewModel
 
         private void SelectCertificateStoreCommandExecute()
         {
+            DiagnosticsClient.TrackEvent("SignPackageViewModel_SelectCertificateFileCommandExecute");
+
+#if WINDOWS
             try
             {
-                using (var store = new X509Store(StoreName.My, StoreLocation.CurrentUser))
+                using var store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+                store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+
+                // https://github.com/NuGet/NuGet.Client/blob/adfe6d5c37834e8eb11453518e4508a534c15f8d/src/NuGet.Core/NuGet.Commands/SignCommand/SignCommandRunner.cs#L271-L283
+                var collection = new X509Certificate2Collection();
+
+                foreach (var certificate in store.Certificates)
                 {
-                    store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
-
-                    // https://github.com/NuGet/NuGet.Client/blob/adfe6d5c37834e8eb11453518e4508a534c15f8d/src/NuGet.Core/NuGet.Commands/SignCommand/SignCommandRunner.cs#L271-L283
-                    var collection = new X509Certificate2Collection();
-
-                    foreach (var certificate in store.Certificates)
+                    if (IsCertificateValidForNuGet(certificate))
                     {
-                        if (IsCertificateValidForNuGet(certificate))
-                        {
-                            collection.Add(certificate);
-                        }
+                        collection.Add(certificate);
                     }
+                }
 
-                    var certificates = X509Certificate2UI.SelectFromCollection(
-                        collection,
-                        Resources.ChooseCertificate_Title,
-                        Resources.ChooseCertificate_Description,
-                        X509SelectionFlag.SingleSelection);
+                var certificates = X509Certificate2UI.SelectFromCollection(
+                    collection,
+                    Resources.ChooseCertificate_Title,
+                    Resources.ChooseCertificate_Description,
+                    X509SelectionFlag.SingleSelection);
 
-                    if (certificates.Count > 0)
-                    {
-                        Certificate = certificates[0];
-                        CertificateFileName = null;
-                        ShowPassword = false;
-                    }
+                if (certificates.Count > 0)
+                {
+                    Certificate = certificates[0];
+                    CertificateFileName = null;
+                    ShowPassword = false;
                 }
             }
             catch (Exception ex)
             {
                 OnError(ex);
             }
+#else
+            throw new PlatformNotSupportedException();
+#endif
         }
 
+#if WINDOWS
         private static bool IsCertificateValidForNuGet(X509Certificate2 certificate) =>
             CertificateUtility.IsValidForPurposeFast(certificate, Oids.CodeSigningEku) &&
             CertificateUtility.IsCertificatePublicKeyValid(certificate) &&
             CertificateUtility.IsSignatureAlgorithmSupported(certificate) &&
             !CertificateUtility.HasExtendedKeyUsage(certificate, Oids.LifetimeSigningEku) &&
             !CertificateUtility.IsCertificateValidityPeriodInTheFuture(certificate);
+#endif
 
         private void ShowCertificateCommandExecute()
         {
+            DiagnosticsClient.TrackEvent("SignPackageViewModel_ShowCertificateCommandExecute");
+
             var certificate = Certificate;
             if (certificate != null)
             {
                 try
                 {
+#if WINDOWS
                     X509Certificate2UI.DisplayCertificate(certificate);
+#endif
                 }
                 catch { }
             }
         }
 
         // https://github.com/NuGet/NuGet.Client/blob/4c0c9658445573845ddbeff5656e4b3129f727a2/src/NuGet.Core/NuGet.Commands/SignCommand/SignCommandRunner.cs
-        public async Task<string> SignPackage()
+        public async Task<string?> SignPackage()
         {
             ShowProgress = true;
             CanSign = false;
@@ -292,35 +304,38 @@ namespace PackageExplorerViewModel
 
             try
             {
-                using (var tempCertificate = new X509Certificate2(Certificate))
-                using (var signRequest = new AuthorSignPackageRequest(tempCertificate, HashAlgorithmName))
+
+                if (Certificate == null)
+                    return null;
+
+                using var tempCertificate = new X509Certificate2(Certificate);
+                using var signRequest = new AuthorSignPackageRequest(tempCertificate, HashAlgorithmName);
+                var packagePath = _packageViewModel.GetCurrentPackageTempFile();
+                var originalPackageCopyPath = Path.GetTempFileName();
+
+                ITimestampProvider? timestampProvider = null;
+                if (!string.IsNullOrEmpty(TimestampServer))
                 {
-                    var packagePath = _packageViewModel.GetCurrentPackageTempFile();
-                    var originalPackageCopyPath = Path.GetTempFileName();
+                    timestampProvider = new Rfc3161TimestampProvider(new Uri(TimestampServer));
+                }
+                var signatureProvider = new X509SignatureProvider(timestampProvider);
 
-                    ITimestampProvider timestampProvider = null;
-                    if (!string.IsNullOrEmpty(TimestampServer))
-                    {
-                        timestampProvider = new Rfc3161TimestampProvider(new Uri(TimestampServer));
-                    }
-                    var signatureProvider = new X509SignatureProvider(timestampProvider);
+                using (var options = SigningOptions.CreateFromFilePaths(
+                    inputPackageFilePath: packagePath,
+                    outputPackageFilePath: originalPackageCopyPath,
+                    overwrite: true,
+                    signatureProvider: signatureProvider,
+                    logger: NullLogger.Instance))
+                {
+                    await SigningUtility.SignAsync(options, signRequest, token);
+                }
 
-                    using (var options = SigningOptions.CreateFromFilePaths(
-                        inputPackageFilePath: packagePath,
-                        outputPackageFilePath: originalPackageCopyPath,
-                        overwrite: true,
-                        signatureProvider: signatureProvider,
-                        logger: NullLogger.Instance))
-                    {
-                        await SigningUtility.SignAsync(options, signRequest, token);
-                    }
-
+                if(packagePath != null)
                     File.Delete(packagePath);
 
-                    token.ThrowIfCancellationRequested();
+                token.ThrowIfCancellationRequested();
 
-                    return originalPackageCopyPath;
-                }
+                return originalPackageCopyPath;
             }
             catch (Exception e)
             {
@@ -345,15 +360,18 @@ namespace PackageExplorerViewModel
             _certificateValidationTimer.Change(250, Timeout.Infinite);
         }
 
-        private void ValidateCertificateCallback(object state)
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
+        private void ValidateCertificateCallback(object? state)
         {
+            Debug.Assert(_certificateValidationSemaphore != null, nameof(_certificateValidationSemaphore) + " != null");
+
             _certificateValidationSemaphore.Wait();
 
             try
             {
                 Clear();
 
-                X509Certificate2 certificate;
+                X509Certificate2? certificate;
 
                 var certificateFileName = CertificateFileName;
                 if (string.IsNullOrEmpty(certificateFileName))
@@ -394,12 +412,12 @@ namespace PackageExplorerViewModel
 
                 if (!ShowPassword)
                 {
-                    OnError(new Exception(Resources.PasswordRequired));
+                    OnError(new ArgumentException(Resources.PasswordRequired));
                     ShowPassword = true;
                 }
                 else
                 {
-                    OnError(new Exception(Resources.PasswordIncorrect));
+                    OnError(new ArgumentOutOfRangeException(Resources.PasswordIncorrect));
                 }
             }
             catch (Exception ex)
@@ -422,6 +440,7 @@ namespace PackageExplorerViewModel
 
         private void Clear()
         {
+            CanSign = false;
             ShowProgress = false;
             HasError = false;
             Status = null;
@@ -446,12 +465,14 @@ namespace PackageExplorerViewModel
             try
             {
                 _cts?.Cancel();
+                _cts?.Dispose();
             }
             catch { }
 
             _certificateValidationTimer?.Dispose();
             _certificateValidationSemaphore?.Dispose();
             _certificate?.Dispose();
+            _certificate = null;
         }
     }
 }

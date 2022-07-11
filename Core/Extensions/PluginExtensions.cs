@@ -7,14 +7,16 @@ namespace NuGetPe
     {
         public static int UnpackPackage(this IPackage package, string sourceDirectory, string targetRootDirectory)
         {
+            if (package is null)
+                throw new ArgumentNullException(nameof(package));
             if (sourceDirectory == null)
             {
-                throw new ArgumentNullException("sourceDirectory");
+                throw new ArgumentNullException(nameof(sourceDirectory));
             }
 
             if (targetRootDirectory == null)
             {
-                throw new ArgumentNullException("targetRootDirectory");
+                throw new ArgumentNullException(nameof(targetRootDirectory));
             }
 
             if (!sourceDirectory.EndsWith("\\", StringComparison.OrdinalIgnoreCase))
@@ -30,13 +32,12 @@ namespace NuGetPe
                     var suffixPath = file.Path.Substring(sourceDirectory.Length);
                     var targetPath = Path.Combine(targetRootDirectory, suffixPath);
 
-                    using (var stream = File.OpenWrite(targetPath))
+                    using (var stream = File.Open(targetPath, FileMode.Create, FileAccess.Write, FileShare.Read))
                     {
-                        using (var packageStream = file.GetStream())
-                        {
-                            packageStream.CopyTo(stream);
-                        }
+                        using var packageStream = file.GetStream();
+                        packageStream.CopyTo(stream);
                     }
+                    File.SetLastWriteTime(targetPath, file.LastWriteTime.DateTime);
 
                     numberOfFilesCopied++;
                 }

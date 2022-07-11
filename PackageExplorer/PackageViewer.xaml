@@ -1,20 +1,19 @@
-﻿<UserControl 
-    x:Class="PackageExplorer.PackageViewer" 
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" 
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-    xmlns:self="clr-namespace:PackageExplorer" 
-    xmlns:viewmodel="clr-namespace:PackageExplorerViewModel;assembly=PackageViewModel" 
-    xmlns:core="clr-namespace:NuGet.Packaging.Core;assembly=NuGet.Packaging.Core"
-    xmlns:pack="clr-namespace:NuGet.Packaging;assembly=NuGet.Packaging.Core" 
+<UserControl
+    x:Class="PackageExplorer.PackageViewer"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:self="clr-namespace:PackageExplorer"
+    xmlns:viewmodel="clr-namespace:PackageExplorerViewModel;assembly=NuGetPackageExplorer.PackageViewModel"
+    xmlns:core="clr-namespace:NuGet.Packaging.Core;assembly=NuGet.Packaging"
     xmlns:packaging="clr-namespace:NuGet.Packaging;assembly=NuGet.Packaging"
-    xmlns:nugetpe="clr-namespace:NuGetPe;assembly=Core"
-    xmlns:spinners="clr-namespace:xamlSpinnersWPF"
-    Visibility="{Binding Converter={StaticResource NullToVisibilityConverter}, FallbackValue=Collapsed}" 
+    xmlns:nugetpe="clr-namespace:NuGetPe;assembly=NuGetPackageExplorer.Core"
+    xmlns:controls="clr-namespace:PackageExplorer.Controls"
+    Visibility="{Binding Converter={StaticResource NullToVisibilityConverter}, FallbackValue=Collapsed}"
     Margin="5,7,5,7"
-    mc:Ignorable="d" 
-    d:DesignHeight="300" 
+    mc:Ignorable="d"
+    d:DesignHeight="300"
     d:DesignWidth="300">
 
     <UserControl.Resources>
@@ -22,12 +21,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Xaml/TemplateStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
-
-            <BitmapImage x:Key="FolderImageSource" UriSource="Images/Folder.png" />
-            <BitmapImage x:Key="ScriptImageSource" UriSource="Images/Script.png" />
             <self:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
             <self:CountToVisibilityConverter Inverted="True" x:Key="invertedCountConverter" />
-            <self:StringCollectionsToStringConverter x:Key="authorNamesConverter" />
             <self:UppercaseConverter x:Key="upperCaseConverter" />
             <self:FrameworkNameConverter x:Key="frameworkConverter" />
             <self:NormalizeTextConverter x:Key="NormalizeTextConverter" />
@@ -37,8 +32,14 @@
             <self:ReferenceSetConverter x:Key="ReferenceSetConverter" />
             <self:PackageDependencyConverter x:Key="PackageDependencyConverter" />
             <self:FrameworkAssemblyReferenceDisplayConverter x:Key="FrameworkAssemblyReferenceDisplayConverter" />
+            <self:FrameworkNameConverter x:Key="FrameworkNameConverter" />
             <self:NuGetVersionConverter x:Key="NuGetVersionConverter" />
             <self:NuGetVersionPreReleaseConverter x:Key="NuGetVersionPreReleaseConverter" />
+            <self:ListToStringConverter x:Key="ListToStringConverter" />
+            <self:PackageIconConverter x:Key="PackageIconConverter" />
+            <self:FileTypeToImageSourceConverter x:Key="FileTypeToImageSourceConverter" />
+            <self:LicenseMetadataConverter x:Key="LicenseMetadataConverter" />
+            <self:LicenseUrlToVisibilityConverter x:Key="LicenseUrlToVisibilityConverter" />
 
             <DataTemplate DataType="{x:Type core:PackageDependency}">
                 <TextBlock ToolTip="Open this package from online feed.">
@@ -48,6 +49,141 @@
                 </TextBlock>
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type viewmodel:SymbolValidatorResultViewModel}" x:Key="SourceLinkValidation">
+                <StackPanel Orientation="Horizontal" Cursor="Hand" ToolTip="{Binding SourceLinkErrorMessage, Mode=OneWay}">
+                    <TextBlock Name="isValid" Text="{x:Static self:Resources.Validation_Pending}" />
+                    <ContentControl Name="icon" Margin="3,0,0,0" Width="16" Height="16" Visibility="Collapsed"  />
+                    <controls:Spinner x:Name="spinner" Margin="3,0,0,0" Width="16" Height="16" />
+                </StackPanel>
+                <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="Valid">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Valid}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="ValidExternal">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_ValidExternal}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="NothingToValidate">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_NothingToValidate}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="NoSourceLink">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_MissingSourceLink}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityCriticalIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="HasUntrackedSources">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_HasUntrackedSources}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityWarningIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="InvalidSourceLink">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_InvalidSourceLink}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityCriticalIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="NoSymbols">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_MissingSymbols}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityCriticalIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SourceLinkResult}" Value="Pending">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Pending}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                </DataTemplate.Triggers>
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewmodel:SymbolValidatorResultViewModel}" x:Key="DeterministicValidation">
+                <StackPanel Orientation="Horizontal" Cursor="Hand" ToolTip="{Binding DeterministicErrorMessage, Mode=OneWay}">
+                    <TextBlock Name="isValid" Text="{x:Static self:Resources.Validation_Pending}" />
+                    <ContentControl Name="icon" Margin="3,0,0,0" Width="16" Height="16" Visibility="Collapsed"  />
+                    <controls:Spinner x:Name="spinner" Margin="3,0,0,0" Width="16" Height="16" />
+                </StackPanel>
+                <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding DeterministicResult}" Value="Valid">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Valid}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding DeterministicResult}" Value="NonDeterministic">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_NonDeterministic}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityCriticalIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding DeterministicResult}" Value="HasUntrackedSources">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_HasUntrackedSources}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityWarningIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding DeterministicResult}" Value="NothingToValidate">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_NothingToValidate}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding DeterministicResult}" Value="Pending">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Pending}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                </DataTemplate.Triggers>
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewmodel:SymbolValidatorResultViewModel}" x:Key="CompilerFlagsValidation">
+                <StackPanel Orientation="Horizontal" Cursor="Hand" ToolTip="{Binding CompilerFlagsMessage, Mode=OneWay}">
+                    <TextBlock Name="isValid" Text="{x:Static self:Resources.Validation_Pending}" />
+                    <ContentControl Name="icon" Margin="3,0,0,0" Width="16" Height="16" Visibility="Collapsed"  />
+                    <controls:Spinner x:Name="spinner" Margin="3,0,0,0" Width="16" Height="16" />
+                </StackPanel>
+                <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding CompilerFlagsResult}" Value="Valid">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Valid}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding CompilerFlagsResult}" Value="Present">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Present}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityWarningIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding CompilerFlagsResult}" Value="Missing">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_MissingCompilerFlags}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityCriticalIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding CompilerFlagsResult}" Value="NothingToValidate">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_NothingToValidate}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding CompilerFlagsResult}" Value="Pending">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Pending}" />
+                        <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="spinner" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                </DataTemplate.Triggers>
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type viewmodel:EditablePackageMetadata}" x:Key="VerifySignaturesResult">
 
                 <StackPanel Orientation="Horizontal" Cursor="Hand" ToolTip="{x:Static self:Resources.Dialog_ShowDetails}" >
@@ -55,37 +191,31 @@
                         <MouseBinding Gesture="LeftClick" Command="{Binding ShowValidationResultsCommand}" />
                     </StackPanel.InputBindings>
                     <TextBlock Name="isValid" Text="{x:Static self:Resources.Validation_Pending}" />
-                    <Image Name="icon" Margin="3,0,0,0" Visibility="Collapsed"  />
-                    <spinners:ucSpinnerDotCircle x:Name="spinner" Margin="3,0,0,0" Width="16" Height="16" Foreground="Black" />
+                    <ContentControl Name="icon" Margin="3,0,0,0" Width="16" Height="16" Visibility="Collapsed"  />
+                    <controls:Spinner x:Name="spinner" Margin="3,0,0,0" Width="16" Height="16" />
                 </StackPanel>
                 <DataTemplate.Triggers>
                     <DataTrigger Binding="{Binding ValidationResult.Trust}" Value="Valid">
                         <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Valid}" />
-                        <Setter TargetName="icon" Property="Source" Value="Images/Validate.png" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityOkIcon}" />
                         <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
                         <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
-                    <DataTrigger Binding="{Binding ValidationResult.Trust}" Value="Illegal">
-                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Illegal}" />
-                        <Setter TargetName="icon" Property="Source" Value="Images/error.png" />
-                        <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
-                        <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding ValidationResult.Trust}" Value="Untrusted">
-                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Untrusted}" />
-                        <Setter TargetName="icon" Property="Source" Value="Images/Warning.png" />
+                    <DataTrigger Binding="{Binding ValidationResult.Trust}" Value="Disallowed">
+                        <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Disallowed}" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityCriticalIcon}" />
                         <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
                         <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding ValidationResult.Trust}" Value="Suspect">
                         <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Suspect}" />
-                        <Setter TargetName="icon" Property="Source" Value="Images/Warning.png" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityWarningIcon}" />
                         <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
                         <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding ValidationResult.Trust}" Value="Unknown">
                         <Setter TargetName="isValid" Property="Text" Value="{x:Static self:Resources.Validation_Unknown}" />
-                        <Setter TargetName="icon" Property="Source" Value="Images/Warning.png" />
+                        <Setter TargetName="icon" Property="Content" Value="{StaticResource StatusSecurityWarningIcon}" />
                         <Setter TargetName="icon" Property="Visibility" Value="Visible"/>
                         <Setter TargetName="spinner" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
@@ -116,7 +246,40 @@
                 </StackPanel>
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type core:RepositoryMetadata}">
+
+            <DataTemplate DataType="{x:Type nugetpe:RepositorySignatureInfo}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource DetailMetadataValueStyle}" >
+                        <Hyperlink Command="GoToPage" CommandParameter="{Binding SignerInfo.Certificate, Mode=OneWay}">
+                            <Run Text="{Binding SignerInfo.Certificate, Converter={StaticResource CertificateToSubjectConverter}, Mode=OneWay}" />
+                        </Hyperlink>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource DetailMetadataValueStyle}"
+                               Visibility="{Binding Timestamp, Converter={StaticResource NullToVisibilityConverter}}"
+                    >
+                        <Run Text="@"/>
+                        <Run Text="{Binding Timestamp, Converter={StaticResource DateTimeOffsetLongDateConverter}, ConverterParameter=F, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource DetailMetadataValueStyle}"
+                               Visibility="{Binding TimestampSignerInfo, Converter={StaticResource NullToVisibilityConverter}}"
+                    >
+                        <Run Text="by"/>
+                        <Hyperlink Command="GoToPage" CommandParameter="{Binding TimestampSignerInfo.Certificate, Mode=OneWay}">
+                            <Run Text="{Binding TimestampSignerInfo.Certificate, Converter={StaticResource CertificateToSubjectConverter}, Mode=OneWay}" />
+                        </Hyperlink>
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource DetailMetadataValueStyle}">
+                        <Run Text="Owners: " /><Run Text="{Binding PackageOwners, Converter={StaticResource ListToStringConverter}, ConverterParameter=', ', Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock Style="{StaticResource DetailMetadataValueStyle}">
+                        <Run Text="Service Index: " /><Hyperlink Command="GoToPage" CommandParameter="{Binding V3ServiceIndexUrl, Mode=OneWay}">
+                            <Run Text="{Binding V3ServiceIndexUrl, Mode=OneWay}" />
+                        </Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type viewmodel:RepositoryMetadataViewModel}">
                 <StackPanel>
                     <StackPanel Style="{StaticResource DetailMetadataStyle}" Visibility="{Binding Type, Converter={StaticResource NullToVisibilityConverter}}">
                         <TextBlock Text="{x:Static self:Resources.Dialog_RepositoryType}" Style="{StaticResource DetailMetadataLabelStyle}" />
@@ -145,14 +308,14 @@
                 </StackPanel>
             </DataTemplate>
 
-            <DataTemplate DataType="{x:Type pack:PackageDependencyGroup}">
+            <DataTemplate DataType="{x:Type packaging:PackageDependencyGroup}">
                 <Grid Margin="0,0,0,8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="{Binding TargetFramework, TargetNullValue={x:Static self:Resources.NoFxDependencyGroup}}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding TargetFramework, Converter={StaticResource FrameworkNameConverter}, TargetNullValue={x:Static self:Resources.NoFxDependencyGroup}}" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <ItemsControl
                         x:Name="dependenciesList"
                         Grid.Row="1"
@@ -163,9 +326,30 @@
                         Grid.Row="1"
                         Margin="20,0,0,0"
                         Visibility="{Binding Items.Count, ElementName=dependenciesList, Converter={StaticResource invertedCountConverter}}"
-                        Style="{StaticResource NoDependencyTextBoxStyle}" 
+                        Style="{StaticResource NoDependencyTextBoxStyle}"
                         Text="{x:Static self:Resources.Dialog_NoDependencyLabel}">
                     </TextBlock>
+                </Grid>
+            </DataTemplate>
+
+            <DataTemplate x:Key="FrameworkReferenceItemTemplate" DataType="{x:Type packaging:FrameworkReference}">
+                <TextBlock Text="{Binding Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type packaging:FrameworkReferenceGroup}">
+                <Grid Margin="0,0,0,8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="{Binding TargetFramework, Converter={StaticResource FrameworkNameConverter}, TargetNullValue={x:Static self:Resources.NoFxDependencyGroup}}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <ItemsControl
+                        x:Name="frameworkReferencesList"
+                        Grid.Row="1"
+                        Margin="20,0,0,0"
+                        ItemsSource="{Binding FrameworkReferences}"
+                        ItemTemplate="{StaticResource FrameworkReferenceItemTemplate}" />
                 </Grid>
             </DataTemplate>
 
@@ -180,7 +364,7 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="{Binding TargetFramework, TargetNullValue={x:Static self:Resources.NoFxDependencyGroup}}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding TargetFramework, Converter={StaticResource FrameworkNameConverter}, TargetNullValue={x:Static self:Resources.NoFxDependencyGroup}}" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <ItemsControl
                         x:Name="referencesList"
                         Grid.Row="1"
@@ -192,10 +376,10 @@
 
             <ContextMenu x:Key="SharedContextMenu" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                 <MenuItem Header="_View Content" InputGestureText="Enter" Command="{Binding ViewCommand}" CommandParameter="{Binding}" FontWeight="SemiBold" />
-                <MenuItem Header="_Open in Windows shell..." Command="{Binding OpenCommand}" CommandParameter="{Binding}" />
+                <MenuItem Header="_Open in Windows shell..." InputGestureText="Shift+Enter"  Command="{Binding OpenCommand}" CommandParameter="{Binding}" />
                 <MenuItem Header="Open _with..." Command="{Binding OpenWithCommand}" CommandParameter="{Binding}" />
-                <MenuItem Header="_Save As..." Command="{Binding SaveCommand}" CommandParameter="{Binding}" />
-                <MenuItem Header="Copy" Command="Copy" />
+                <MenuItem Header="_Save As..." Command="{Binding SaveCommand}" CommandParameter="{Binding}" Icon="{StaticResource SaveAsIcon}" />
+                <MenuItem Header="Copy" Command="Copy" Icon="{StaticResource CopyIcon}" />
                 <Separator />
                 <MenuItem Header="_Edit" Command="{Binding EditCommand}" CommandParameter="{Binding}" />
                 <Separator />
@@ -203,59 +387,35 @@
                 <MenuItem Header="Re_place with..." Command="{Binding ReplaceCommand}" CommandParameter="{Binding}" />
                 <self:GrayscaleMenuItem Header="_Delete" InputGestureText="Delete" Command="{Binding DeleteCommand}" CommandParameter="{Binding}">
                     <self:GrayscaleMenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/Delete.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource RemoveIcon}" />
                     </self:GrayscaleMenuItem.Icon>
                 </self:GrayscaleMenuItem>
             </ContextMenu>
 
             <ContextMenu x:Key="FolderSharedContextMenu" Opened="PackageFolderContextMenu_Opened" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
 
-                <self:GrayscaleMenuItem Header="Add init.ps1" Command="{Binding AddScriptCommand, Mode=OneWay}" CommandParameter="init.ps1" Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=tools}">
-                    <MenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/script.png" />
-                    </MenuItem.Icon>
-                </self:GrayscaleMenuItem>
-
-                <self:GrayscaleMenuItem Header="Add install.ps1" Command="{Binding AddScriptCommand, Mode=OneWay}" CommandParameter="install.ps1" Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=tools;tools\\*}">
-                    <MenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/script.png" />
-                    </MenuItem.Icon>
-                </self:GrayscaleMenuItem>
-
-                <self:GrayscaleMenuItem Header="Add uninstall.ps1" Command="{Binding AddScriptCommand, Mode=OneWay}" CommandParameter="uninstall.ps1" Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=tools;tools\\*}">
-                    <MenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/script.png" />
-                    </MenuItem.Icon>
-                </self:GrayscaleMenuItem>
-                
-                <Separator Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=tools;tools\\*}" />
-
                 <self:GrayscaleMenuItem Header="Add .props file" Command="{Binding AddBuildFileCommand, Mode=OneWay}" CommandParameter=".props" Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=build;build\\*}">
                     <MenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/props.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource PropertyIcon}" />
                     </MenuItem.Icon>
                 </self:GrayscaleMenuItem>
 
                 <self:GrayscaleMenuItem Header="Add .targets file" Command="{Binding AddBuildFileCommand, Mode=OneWay}" CommandParameter=".targets" Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=build;build\\*}">
                     <MenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/props.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource PropertyIcon}" />
                     </MenuItem.Icon>
                 </self:GrayscaleMenuItem>
 
                 <Separator Visibility="{Binding Path, Converter={StaticResource StringToVisibilityConverter}, ConverterParameter=build;build\\*}" />
 
-                <MenuItem Header="Add _New File..." Command="{Binding AddNewFileCommand}" CommandParameter="{Binding}" />
-                <MenuItem Header="_Add Existing File..." Command="{Binding AddContentFileCommand}" CommandParameter="{Binding}" />
-                <MenuItem Header="Add Ne_w Folder" Command="{Binding AddNewFolderCommand}" CommandParameter="{Binding}">
-                    <MenuItem.Icon>
-                        <Image Source="Images/NewFolderHS.png" />
-                    </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Paste" Command="Paste" />
-                <MenuItem Header="_Rename..." InputGestureText="F2" Command="{Binding RenameCommand}" CommandParameter="{Binding}" />
+                <MenuItem Header="Add _New File..." Command="{Binding AddNewFileCommand}" CommandParameter="{Binding}" Icon="{StaticResource NewItemIcon}" />
+                <MenuItem Header="_Add Existing File..." Command="{Binding AddContentFileCommand}" CommandParameter="{Binding}" Icon="{StaticResource AddItemIcon}" />
+                <MenuItem Header="Add Ne_w Folder" Command="{Binding AddNewFolderCommand}" CommandParameter="{Binding}" Icon="{StaticResource AddFolderIcon}" />
+                <MenuItem Header="Paste" Command="Paste" Icon="{StaticResource PasteIcon}" />
+                <MenuItem Header="_Rename..." InputGestureText="F2" Command="{Binding RenameCommand}" CommandParameter="{Binding}" Icon="{StaticResource RenameIcon}" />
                 <self:GrayscaleMenuItem Header="_Delete" InputGestureText="Delete" Command="{Binding DeleteCommand}" CommandParameter="{Binding}">
                     <self:GrayscaleMenuItem.Icon>
-                        <self:GrayscaleImage Source="Images/Delete.png" />
+                        <self:GrayscaleContentPresenter Content="{StaticResource RemoveIcon}" />
                     </self:GrayscaleMenuItem.Icon>
                 </self:GrayscaleMenuItem>
             </ContextMenu>
@@ -265,11 +425,18 @@
             </DataTemplate>
 
             <!-- data template for the package details pane -->
-            <DataTemplate x:Key="PackageDetailTemplate">
+            <DataTemplate x:Key="PackageDetailTemplate" DataType="{x:Type viewmodel:EditablePackageMetadata}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="8">
-                        <Border BorderBrush="{StaticResource {x:Static SystemColors.ActiveBorderBrushKey}}" BorderThickness="0.5" HorizontalAlignment="Left" Padding="2" Background="White" Margin="0,0,0,5" ToolTipService.ToolTip="{Binding IconUrl}" Visibility="{Binding IconUrl, Converter={StaticResource NullToVisibilityConverter}}">
-                            <Image Source="{Binding IconUrl, TargetNullValue={x:Null}}" Width="32" Height="32" Stretch="Fill" StretchDirection="DownOnly" />
+                        <Border BorderBrush="{StaticResource {x:Static SystemColors.ActiveBorderBrushKey}}" BorderThickness="0.5" HorizontalAlignment="Left" Padding="2" Background="White" Margin="0,0,0,5" ToolTipService.ToolTip="{Binding IconOrIconUrl}" Visibility="{Binding IconOrIconUrl, Converter={StaticResource NullToVisibilityConverter}}">
+                            <Image Width="32" Height="32" >
+                                <Image.Source>
+                                    <MultiBinding Converter="{StaticResource PackageIconConverter}">
+                                        <Binding ElementName="PackageMetadataViewer" Path="DataContext" />
+                                        <Binding Path="IconOrIconUrl" />
+                                    </MultiBinding>
+                                </Image.Source>
+                            </Image>
                         </Border>
 
                         <!-- Id -->
@@ -286,29 +453,56 @@
                         </StackPanel>
 
                         <!-- Publisher -->
-                        <StackPanel Style="{StaticResource DetailMetadataStyle}" 
+                        <StackPanel Style="{StaticResource DetailMetadataStyle}"
                                     Visibility="{Binding PublisherSignature, Converter={StaticResource NullToVisibilityConverter}}">
                             <TextBlock Text="{x:Static self:Resources.Dialog_PublisherLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
 
                             <ContentPresenter Content="{Binding PublisherSignature, Mode=OneWay}" />
-                            
+
                         </StackPanel>
 
                         <!-- Repository -->
-                        <StackPanel Style="{StaticResource DetailMetadataStyle}" 
+                        <StackPanel Style="{StaticResource DetailMetadataStyle}"
                                     Visibility="{Binding RepositorySignature, Converter={StaticResource NullToVisibilityConverter}}">
                             <TextBlock Text="{x:Static self:Resources.Dialog_RepositoryLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
 
                             <ContentPresenter Content="{Binding RepositorySignature, Mode=OneWay}" />
 
                         </StackPanel>
-  
-                        <!-- Validation -->
-                        <StackPanel Style="{StaticResource DetailMetadataStyle}" 
-                                    Visibility="{Binding IsSigned, Converter={StaticResource boolToVis}}">
-                            <TextBlock Text="{x:Static self:Resources.Dialog_SignatureValidation}" Style="{StaticResource DetailMetadataLabelStyle}" />
 
-                            <ContentPresenter Content="{Binding Mode=OneWay}" ContentTemplate="{StaticResource VerifySignaturesResult}" Margin="3,0,0,0" />
+                        <!-- Validation -->
+                        <StackPanel>
+                            <TextBlock Text="{x:Static self:Resources.Dialog_Health}" Style="{StaticResource DetailMetadataLabelStyle}" />
+                            <StackPanel Margin="14,0,0,0">
+                                <StackPanel Style="{StaticResource DetailMetadataStyle}"
+                                    Visibility="{Binding IsSigned, Converter={StaticResource boolToVis}}">
+                                    <TextBlock Text="{x:Static self:Resources.Dialog_SignatureValidation}" Style="{StaticResource DetailMetadataLabelStyle}" />
+
+                                    <ContentPresenter Content="{Binding Mode=OneWay}" ContentTemplate="{StaticResource VerifySignaturesResult}" Margin="3,0,0,0" />
+                                </StackPanel>
+
+                                <!-- Source Link Validation -->
+                                <StackPanel Style="{StaticResource DetailMetadataStyle}">
+                                    <TextBlock Text="{x:Static self:Resources.Dialog_SourceLinkValidation}" Style="{StaticResource DetailMetadataLabelStyle}" />
+
+                                    <ContentPresenter Content="{Binding PackageViewModel.SymbolValidatorResultViewModel, Mode=OneWay}" ContentTemplate="{StaticResource SourceLinkValidation}" Margin="3,0,0,0" />
+                                </StackPanel>
+
+                                <!-- Deterministic Validation -->
+                                <StackPanel Style="{StaticResource DetailMetadataStyle}">
+                                    <TextBlock Text="{x:Static self:Resources.Dialog_DeterministicValidation}" Style="{StaticResource DetailMetadataLabelStyle}" />
+
+                                    <ContentPresenter Content="{Binding PackageViewModel.SymbolValidatorResultViewModel, Mode=OneWay}" ContentTemplate="{StaticResource DeterministicValidation}" Margin="3,0,0,0" />
+                                </StackPanel>
+
+                                <!-- Has Compiler Flag Data Validation -->
+                                <StackPanel Style="{StaticResource DetailMetadataStyle}">
+                                    <TextBlock Text="{x:Static self:Resources.Dialog_HasCompilerFlags}" Style="{StaticResource DetailMetadataLabelStyle}" />
+
+                                    <ContentPresenter Content="{Binding PackageViewModel.SymbolValidatorResultViewModel, Mode=OneWay}" ContentTemplate="{StaticResource CompilerFlagsValidation}" Margin="3,0,0,0" />
+                                </StackPanel>
+                                <TextBlock Text="{x:Static self:Resources.Dialog_ValidationNote}" FontStyle="Italic"  />
+                            </StackPanel>
                         </StackPanel>
 
                         <!-- Title -->
@@ -320,13 +514,13 @@
                         <!-- Authors -->
                         <DockPanel Margin="0,3,0,0">
                             <TextBlock DockPanel.Dock="Left" Text="{x:Static self:Resources.Dialog_CreatedByLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
-                            <TextBlock Text="{Binding Authors, Converter={StaticResource authorNamesConverter}}" Style="{StaticResource DetailMetadataValueStyle}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Authors, Converter={StaticResource StringCollectionsToStringConverter}}" Style="{StaticResource DetailMetadataValueStyle}" TextWrapping="Wrap" />
                         </DockPanel>
 
                         <!-- Owners -->
                         <DockPanel Margin="0,3,0,0" Visibility="{Binding Owners, Converter={StaticResource NullToVisibilityConverter}}">
                             <TextBlock DockPanel.Dock="Left" Text="{x:Static self:Resources.Dialog_OwnersLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
-                            <TextBlock Text="{Binding Owners, Converter={StaticResource authorNamesConverter}}" Style="{StaticResource DetailMetadataValueStyle}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Owners, Converter={StaticResource StringCollectionsToStringConverter}}" Style="{StaticResource DetailMetadataValueStyle}" TextWrapping="Wrap" />
                         </DockPanel>
 
                         <!-- Min client version -->
@@ -340,6 +534,12 @@
                             <TextBlock Text="{x:Static self:Resources.Dialog_DevelopmentDependencyLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
                             <TextBlock Text="{Binding DevelopmentDependency, Converter={StaticResource BooleanConverter}}" Style="{StaticResource DetailMetadataValueStyle}" />
                         </StackPanel>
+
+                        <!-- Readme -->
+                        <DockPanel Margin="0,3,0,0" Visibility="{Binding Readme, Converter={StaticResource NullToVisibilityConverter}}">
+                            <TextBlock DockPanel.Dock="Left" Text="{x:Static self:Resources.Dialog_ReadmeLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
+                            <TextBlock Text="{Binding Readme}" Style="{StaticResource DetailMetadataValueStyle}" />
+                        </DockPanel>
 
                         <!-- Tags -->
                         <DockPanel Margin="0,3,0,0" Visibility="{Binding Tags, Converter={StaticResource NullToVisibilityConverter}}">
@@ -360,11 +560,34 @@
                         </StackPanel>
 
                         <!-- View License link -->
-                        <TextBlock Visibility="{Binding LicenseUrl, Converter={StaticResource NullToVisibilityConverter}}">
+                        <TextBlock Visibility="{Binding LicenseUrl, Converter={StaticResource LicenseUrlToVisibilityConverter}}">
                             <Hyperlink Command="GoToPage" CommandParameter="{Binding LicenseUrl}" ToolTip="{Binding LicenseUrl}">
                                 <Run Text="{x:Static self:Resources.Dialog_ViewLicense}" />
                             </Hyperlink>
                         </TextBlock>
+
+                        <!-- License Metadata -->
+                        <StackPanel Visibility="{Binding LicenseMetadata, Converter={StaticResource NullToVisibilityConverter}}">
+                            <StackPanel>
+                                <StackPanel Style="{StaticResource DetailMetadataStyle}"
+                                            Visibility="{Binding LicenseMetadata.License, Converter={StaticResource NullToVisibilityConverter}}">
+                                    <TextBlock Text="{x:Static self:Resources.PackageChooser_DetailLicense}"
+                                               Style="{StaticResource DetailMetadataLabelStyle}" />
+                                    <TextBlock Text="{Binding LicenseMetadata, Converter={StaticResource LicenseMetadataConverter}}"
+                                               ToolTipService.ToolTip="{Binding LicenseMetadata, Converter={StaticResource LicenseMetadataConverter}, ConverterParameter=detailed}"
+                                               Style="{StaticResource DetailMetadataValueStyle}" />
+                                </StackPanel>
+
+                                <!-- note: LicenseUrl & LicenseMetadata.LicenseUrl are the same property, but wont co-exist -->
+                                <TextBlock Visibility="{Binding LicenseMetadata.LicenseUrl, Converter={StaticResource LicenseUrlToVisibilityConverter}}">
+                                    <Hyperlink Command="GoToPage"
+                                               CommandParameter="{Binding LicenseMetadata.LicenseUrl}"
+                                               ToolTip="{Binding LicenseMetadata.LicenseUrl}">
+                                        <Run Text="{x:Static self:Resources.Dialog_ViewLicense}" />
+                                    </Hyperlink>
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
 
                         <!-- Project Url -->
                         <TextBlock Visibility="{Binding ProjectUrl, Converter={StaticResource NullToVisibilityConverter}}">
@@ -411,7 +634,7 @@
                         <!-- Dependencies list -->
                         <TextBlock Text="{x:Static self:Resources.Dialog_DependenciesLabel}" Style="{StaticResource DetailMetadataLabelStyle}" />
 
-                        <ItemsControl x:Name="DependencyItems" Margin="25,5,0,0" ItemsSource="{Binding DependencySets, Converter={StaticResource DependencySetConverter}}">
+                        <ItemsControl x:Name="DependencyItems" Margin="25,5,0,0" ItemsSource="{Binding DependencyGroups, Converter={StaticResource DependencySetConverter}}">
                         </ItemsControl>
 
                         <TextBlock Margin="25,5,0,0" Visibility="{Binding Items.Count, ElementName=DependencyItems, Converter={StaticResource invertedCountConverter}}" Style="{StaticResource NoDependencyTextBoxStyle}" Text="{x:Static self:Resources.Dialog_NoDependencyLabel}"></TextBlock>
@@ -432,58 +655,33 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        
+
+                        <!-- Framework Reference Groups -->
+                        <TextBlock Visibility="{Binding Items.Count, ElementName=FrameworkReferenceGroups, Converter={StaticResource countConverter}}" Text="Framework References:" Margin="0,5,0,0" Style="{StaticResource DetailMetadataLabelStyle}" />
+
+                        <ItemsControl x:Name="FrameworkReferenceGroups" Margin="25,5,0,0" ItemsSource="{Binding FrameworkReferenceGroups}">
+                        </ItemsControl>
+
                         <!-- Package Assembly References -->
                         <TextBlock Visibility="{Binding Items.Count, ElementName=PackageAssemblyReferences, Converter={StaticResource countConverter}}" Text="Filtered Assembly References:" Margin="0,5,0,0" Style="{StaticResource DetailMetadataLabelStyle}" />
 
                         <ItemsControl x:Name="PackageAssemblyReferences" Margin="25,5,0,0" ItemsSource="{Binding PackageAssemblyReferences, Converter={StaticResource ReferenceSetConverter}}">
                         </ItemsControl>
+
                     </StackPanel>
                 </ScrollViewer>
             </DataTemplate>
 
             <DataTemplate DataType="{x:Type viewmodel:PackageFile}">
                 <StackPanel Background="Transparent" Orientation="Horizontal" ContextMenu="{StaticResource SharedContextMenu}">
-                    <Image x:Name="ItemIcon" Visibility="Collapsed" Margin="0,0,2,0" />
+                    <Image x:Name="ItemIcon" Source="{Binding Path, Converter={StaticResource FileTypeToImageSourceConverter}, Mode=OneTime}" Margin="0,0,2,0" />
                     <TextBlock x:Name="Header" Text="{Binding Name}"></TextBlock>
                 </StackPanel>
-
-                <DataTemplate.Triggers>
-                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="TOOLS\INSTALL.PS1">
-                        <Setter TargetName="ItemIcon" Property="Visibility" Value="Visible" />
-                        <Setter TargetName="ItemIcon" Property="Source" Value="{StaticResource ScriptImageSource}" />
-                    </DataTrigger>
-
-                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="TOOLS\UNINSTALL.PS1">
-                        <Setter TargetName="ItemIcon" Property="Visibility" Value="Visible" />
-                        <Setter TargetName="ItemIcon" Property="Source" Value="{StaticResource ScriptImageSource}" />
-                    </DataTrigger>
-
-                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="TOOLS\INIT.PS1">
-                        <Setter TargetName="ItemIcon" Property="Visibility" Value="Visible" />
-                        <Setter TargetName="ItemIcon" Property="Source" Value="{StaticResource ScriptImageSource}" />
-                    </DataTrigger>
-
-                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="README.TXT">
-                        <Setter TargetName="ItemIcon" Property="Visibility" Value="Visible" />
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/books.png" />
-                    </DataTrigger>
-
-                    <DataTrigger Binding="{Binding Extension, Converter={StaticResource upperCaseConverter}}" Value=".PROPS">
-                        <Setter TargetName="ItemIcon" Property="Visibility" Value="Visible" />
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/props.png" />
-                    </DataTrigger>
-
-                    <DataTrigger Binding="{Binding Extension, Converter={StaticResource upperCaseConverter}}" Value=".TARGETS">
-                        <Setter TargetName="ItemIcon" Property="Visibility" Value="Visible" />
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/props.png" />
-                    </DataTrigger>
-                </DataTemplate.Triggers>
             </DataTemplate>
 
             <HierarchicalDataTemplate DataType="{x:Type viewmodel:PackageFolder}" ItemsSource="{Binding Children}">
                 <StackPanel Background="Transparent" Orientation="Horizontal" ContextMenu="{StaticResource FolderSharedContextMenu}">
-                    <Image x:Name="ItemIcon" Margin="0,0,2,0" Source="{StaticResource FolderImageSource}" />
+                    <ContentPresenter x:Name="FolderIcon" Margin="0,0,2,0" Content="{StaticResource FolderIcon}" />
                     <TextBlock x:Name="Header" FontWeight="SemiBold">
                         <Run Text="{Binding Name}" />
                         <Run Text="{Binding Path, Converter={StaticResource frameworkConverter}}" Foreground="Salmon" />
@@ -491,25 +689,51 @@
                 </StackPanel>
 
                 <HierarchicalDataTemplate.Triggers>
+
                     <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="LIB">
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/Lib.png" />
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource LibFolderIcon}" />
+                    </DataTrigger>
+
+                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="RUNTIMES">
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource RuntimesFolderIcon}" />
+                    </DataTrigger>
+
+                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="REF">
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource RefFolderIcon}" />
                     </DataTrigger>
 
                     <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="CONTENT">
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/NoteHS.png" />
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource ContentFolderIcon}" />
+                    </DataTrigger>
+
+                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="CONTENTFILES">
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource ContentFolderIcon}" />
                     </DataTrigger>
 
                     <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="TOOLS">
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/Tools.png" />
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource ToolsFolderIcon}" />
                     </DataTrigger>
 
                     <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="BUILD">
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/build.png" />
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource BuildFolderIcon}" />
+                    </DataTrigger>
+
+                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="BUILDMULTITARGETING">
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource BuildFolderIcon}" />
+                    </DataTrigger>
+
+                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="BUILDCROSSTARGETING">
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource BuildFolderIcon}" />
+                    </DataTrigger>
+
+                    <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="BUILDTRANSITIVE">
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource BuildFolderIcon}" />
                     </DataTrigger>
 
                     <DataTrigger Binding="{Binding Path, Converter={StaticResource upperCaseConverter}}" Value="SRC">
-                        <Setter TargetName="ItemIcon" Property="Source" Value="Images/source.png" />
+                        <Setter TargetName="FolderIcon" Property="Content" Value="{StaticResource SourceFolderIcon}" />
                     </DataTrigger>
+
                 </HierarchicalDataTemplate.Triggers>
             </HierarchicalDataTemplate>
         </ResourceDictionary>
@@ -539,118 +763,146 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Toolbar for package metadata pane --> 
-                <Border Grid.Row="0" Background="#BCC7D8" Padding="3" BorderBrush="{StaticResource {x:Static SystemColors.ActiveBorderBrushKey}}" BorderThickness="0,1,0,0"
-                        Visibility="{Binding IsSigned, Converter={StaticResource invertedBoolToVis}}"
-                        >
+                <!-- Toolbar for package metadata pane -->
+                <Border Grid.Row="0" Background="#BCC7D8" Padding="3" BorderBrush="{StaticResource {x:Static SystemColors.ActiveBorderBrushKey}}" BorderThickness="0,1,0,0">
                     <StackPanel Orientation="Horizontal">
-                        <Button 
-                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" 
-                            Command="{Binding EditCommand, Mode=OneWay}" 
-                            Margin="2,0,0,0" 
+                        <Button
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
+                            Command="{Binding EditCommand, Mode=OneWay}"
+                            Margin="2,0,0,0"
                             Padding="1,0,0,0"
-                            Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource invertedBoolToVis}}"
-                            ToolTipService.ToolTip="Edit Metadata (Ctrl+K)">
-                            <Image Source="Images/EditHS.png" />
-                        </Button>
+                            Visibility="{Binding IsSignedOrInEditMetadataMode, Converter={StaticResource invertedBoolToVis}}"
+                            ToolTipService.ToolTip="Edit Metadata (Ctrl+K)"
+                            Content="{StaticResource EditManifestIcon}"
+                            />
 
                         <Button
-                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" 
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
                             Command="{Binding EditMetadataSourceCommand, Mode=OneWay}"
-                            Margin="1,0,0,0" 
+                            Margin="1,0,0,0"
                             Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource invertedBoolToVis}}"
-                            ToolTipService.ToolTip="Edit Metadata Source">
-                            <Image Source="Images/EditSource.png" />
-                        </Button>
+                            ToolTipService.ToolTip="Edit Metadata Source"
+                            Content="{StaticResource MarkupTagIcon}"
+                            />
 
-                        <Button 
-                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" 
+                        <Button
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
                             Margin="2,0,0,0"
                             ToolTipService.ToolTip="Save"
                             Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource boolToVis}}"
-                            Command="{Binding ApplyEditCommand}">
-                            <Image Source="Images/Validate.png" />
-                        </Button>
-                        
-                        <Button 
-                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}" 
+                            Command="{Binding ApplyEditCommand}"
+                            Content="{StaticResource GreenCheckIcon}"
+                            />
+
+
+
+                        <Button
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
                             Margin="1,0,0,0"
                             ToolTipService.ToolTip="Cancel (Esc)"
                             Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource boolToVis}}"
-                            Command="{Binding CancelEditCommand}">
-                            <Image Source="Images/Cancel.png" />
-                        </Button>
+                            Command="{Binding CancelEditCommand}"
+                            Content="{StaticResource CancelIcon}"
+                            />
+
                     </StackPanel>
                 </Border>
 
-                <ContentControl Grid.Row="1" Content="{Binding PackageMetadata}" ContentTemplate="{StaticResource PackageDetailTemplate}" Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource invertedBoolToVis}, FallbackValue=Collapsed}"></ContentControl>
+                <ContentControl x:Name="PackageMetadataViewer" Grid.Row="1" Content="{Binding PackageMetadata}" ContentTemplate="{StaticResource PackageDetailTemplate}" Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource invertedBoolToVis}, FallbackValue=Collapsed}" />
 
                 <self:PackageMetadataEditor x:Name="PackageMetadataEditor" Grid.Row="1" Margin="4,12,4,7" Visibility="{Binding IsInEditMetadataMode, Converter={StaticResource boolToVis}, FallbackValue=Collapsed}" />
             </Grid>
         </HeaderedContentControl>
 
         <GridSplitter Grid.Column="1" Grid.Row="0" Grid.RowSpan="3" ShowsPreview="True" ResizeBehavior="PreviousAndNext" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch" />
-        
+
         <!-- package content tree view -->
-        <HeaderedContentControl Margin="1,0,0,0" Grid.Column="2" Header="Package contents">
-            <TreeView x:Name="PackagesTreeView" ItemsSource="{Binding PackageParts}" BorderThickness="0" Margin="0,4,0,0" DragOver="OnTreeViewItemDragOver" Drop="OnTreeViewItemDrop" SelectedItemChanged="OnTreeViewSelectedItemChanged" PreviewMouseRightButtonDown="TreeView_PreviewMouseRightButtonDown">
-                <TreeView.ItemContainerStyle>
-                    <Style TargetType="{x:Type TreeViewItem}">
-                        <EventSetter Event="MouseDoubleClick" Handler="OnTreeViewItemDoubleClick" />
-                        <EventSetter Event="DragOver" Handler="OnTreeViewItemDragOver" />
-                        <EventSetter Event="Drop" Handler="OnTreeViewItemDrop" />
-                        <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PackagesTreeViewItem_PreviewMouseLeftButtonDown" />
-                        <EventSetter Event="MouseMove" Handler="PackagesTreeViewItem_MouseMove" />
-                        <EventSetter Event="PreviewMouseLeftButtonUp" Handler="PackagesTreeViewItem_PreviewMouseLeftButtonUp" />
-                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, FallbackValue=False}" />
-                        <Setter Property="IsSelected" Value="{Binding IsSelected}" />
-                        <Setter Property="AllowDrop" Value="True" />
-                    </Style>
-                </TreeView.ItemContainerStyle>
+        <HeaderedContentControl Margin="1,0,0,0" Padding="0" Grid.Column="2" Header="Package contents">
+            <DockPanel>
+                <!-- Toolbar for package content pane -->
+                <Border DockPanel.Dock="Top" Background="#BCC7D8" Padding="3" BorderBrush="{StaticResource {x:Static SystemColors.ActiveBorderBrushKey}}" BorderThickness="0,1,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Button
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
+                            Command="{Binding ExpandAllCommand, Mode=OneWay}"
+                            Margin="2,0,0,0"
+                            ToolTipService.ToolTip="Expand All"
+                            Content="{StaticResource ExpandDownGroupIcon}" />
 
-                <TreeView.ContextMenu>
-                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                        <MenuItem Header="Add _New File..." Command="{Binding AddNewFileCommand}" CommandParameter="{Binding RootFolder, Mode=OneWay}" />
-                        <MenuItem Header="_Add Existing File..." Command="{Binding AddContentFileCommand}" CommandParameter="{Binding RootFolder, Mode=OneWay}" />
-                        <MenuItem Header="Add Ne_w Folder" Command="{Binding AddNewFolderCommand}" CommandParameter="{Binding RootFolder, Mode=OneWay}">
-                            <MenuItem.Icon>
-                                <Image Source="Images/NewFolderHS.png" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <Separator />
-                        <self:GrayscaleMenuItem Header="Add _Content Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="content">
-                            <self:GrayscaleMenuItem.Icon>
-                                <self:GrayscaleImage Source="Images/NoteHS.png" />
-                            </self:GrayscaleMenuItem.Icon>
-                        </self:GrayscaleMenuItem>
-                        <self:GrayscaleMenuItem Header="Add _Lib Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="lib">
-                            <self:GrayscaleMenuItem.Icon>
-                                <self:GrayscaleImage Source="Images/Lib.png" />
-                            </self:GrayscaleMenuItem.Icon>
-                        </self:GrayscaleMenuItem>
-                        <self:GrayscaleMenuItem Header="Add _Tools Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="tools">
-                            <self:GrayscaleMenuItem.Icon>
-                                <self:GrayscaleImage Source="Images/Tools.png" />
-                            </self:GrayscaleMenuItem.Icon>
-                        </self:GrayscaleMenuItem>
-                        <self:GrayscaleMenuItem Header="Add _Build Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="build">
-                            <self:GrayscaleMenuItem.Icon>
-                                <self:GrayscaleImage Source="Images/build.png" />
-                            </self:GrayscaleMenuItem.Icon>
-                        </self:GrayscaleMenuItem>
-                        <self:GrayscaleMenuItem Header="Add _Src Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="src">
-                            <self:GrayscaleMenuItem.Icon>
-                                <self:GrayscaleImage Source="Images/Source.png" />
-                            </self:GrayscaleMenuItem.Icon>
-                        </self:GrayscaleMenuItem>
-                    </ContextMenu>
-                </TreeView.ContextMenu>
+                        <Button
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
+                            Command="{Binding CollapseAllCommand, Mode=OneWay}"
+                            Margin="1,0,0,0"
+                            ToolTipService.ToolTip="Collapse All"
+                            Content="{StaticResource CollapseUpGroupIcon}" />
+                    </StackPanel>
+                </Border>
 
-                <TreeView.CommandBindings>
-                    <CommandBinding Command="Copy" Executed="OnTreeViewItemCopy" />
-                    <CommandBinding Command="Paste" Executed="OnTreeViewItemPaste" CanExecute="OnTreeViewItemCanPaste" />
-                </TreeView.CommandBindings>
-            </TreeView>
+                <TreeView x:Name="PackagesTreeView" ItemsSource="{Binding PackageParts}" BorderThickness="0" Padding="4,8,4,4" DragOver="OnTreeViewItemDragOver" Drop="OnTreeViewItemDrop" SelectedItemChanged="OnTreeViewSelectedItemChanged" PreviewMouseRightButtonDown="TreeView_PreviewMouseRightButtonDown">
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="{x:Type TreeViewItem}">
+                            <EventSetter Event="MouseDoubleClick" Handler="OnTreeViewItemDoubleClick" />
+                            <EventSetter Event="DragOver" Handler="OnTreeViewItemDragOver" />
+                            <EventSetter Event="Drop" Handler="OnTreeViewItemDrop" />
+                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="PackagesTreeViewItem_PreviewMouseLeftButtonDown" />
+                            <EventSetter Event="MouseMove" Handler="PackagesTreeViewItem_MouseMove" />
+                            <EventSetter Event="PreviewMouseLeftButtonUp" Handler="PackagesTreeViewItem_PreviewMouseLeftButtonUp" />
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay, FallbackValue=False}" />
+                            <Setter Property="IsSelected" Value="{Binding IsSelected}" />
+                            <Setter Property="AllowDrop" Value="True" />
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+
+                    <TreeView.ContextMenu>
+                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                            <MenuItem Header="Add _New File..." Command="{Binding AddNewFileCommand}" CommandParameter="{Binding RootFolder, Mode=OneWay}" Icon="{StaticResource NewItemIcon}" />
+                            <MenuItem Header="_Add Existing File..." Command="{Binding AddContentFileCommand}" CommandParameter="{Binding RootFolder, Mode=OneWay}" Icon="{StaticResource AddItemIcon}" />
+                            <MenuItem Header="Add Ne_w Folder" Command="{Binding AddNewFolderCommand}" CommandParameter="{Binding RootFolder, Mode=OneWay}" Icon="{StaticResource AddFolderIcon}" />
+                            <Separator />
+                            <self:GrayscaleMenuItem Header="Add _Content Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="content">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource ContentFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                            <self:GrayscaleMenuItem Header="Add _Lib Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="lib">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource LibFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                            <self:GrayscaleMenuItem Header="Add _Tools Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="tools">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource ToolsFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                            <self:GrayscaleMenuItem Header="Add _Build Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="build">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource BuildFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                            <self:GrayscaleMenuItem Header="Add Build_MultiTargeting Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="buildMultiTargeting">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource BuildFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                            <self:GrayscaleMenuItem Header="Add BuildT_ransitive Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="buildTransitive">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource BuildFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                            <self:GrayscaleMenuItem Header="Add _Src Folder" Command="{Binding AddContentFolderCommand}" CommandParameter="src">
+                                <self:GrayscaleMenuItem.Icon>
+                                    <self:GrayscaleContentPresenter Content="{StaticResource SourceFolderIcon}" />
+                                </self:GrayscaleMenuItem.Icon>
+                            </self:GrayscaleMenuItem>
+                        </ContextMenu>
+                    </TreeView.ContextMenu>
+
+                    <TreeView.CommandBindings>
+                        <CommandBinding Command="Copy" Executed="OnTreeViewItemCopy" />
+                        <CommandBinding Command="Paste" Executed="OnTreeViewItemPaste" CanExecute="OnTreeViewItemCanPaste" />
+                    </TreeView.CommandBindings>
+                </TreeView>
+            </DockPanel>
         </HeaderedContentControl>
 
         <GridSplitter Grid.Column="2" Grid.Row="1" Visibility="{Binding ShowContentViewer, Converter={StaticResource boolToVis}, FallbackValue=Collapsed}" ResizeBehavior="PreviousAndNext" Height="4" Margin="0,-2,0,0" HorizontalAlignment="Stretch" VerticalAlignment="Bottom" />
@@ -663,7 +915,7 @@
         </Button>
 
         <GridSplitter Grid.Column="3" Grid.Row="0" Grid.RowSpan="3" ShowsPreview="True" ResizeBehavior="PreviousAndNext" Width="4" Visibility="{Binding ShowPackageAnalysis, Converter={StaticResource boolToVis}, FallbackValue=Collapsed}" HorizontalAlignment="Center" VerticalAlignment="Stretch" />
-        
+
         <!-- Package Analyzer pane -->
         <HeaderedContentControl x:Name="PackageAnalyzerContainer" Header="Package Analysis" Grid.Row="0" Grid.Column="4" Grid.RowSpan="3" Visibility="{Binding ShowPackageAnalysis, Converter={StaticResource boolToVis}, FallbackValue=Collapsed}" Padding="0" Margin="2,0,0,0" IsVisibleChanged="PackageAnalyzerContainer_IsVisibleChanged"></HeaderedContentControl>
 

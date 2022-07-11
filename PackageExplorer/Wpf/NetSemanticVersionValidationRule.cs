@@ -14,12 +14,12 @@ namespace PackageExplorer
                 return ValidationResult.ValidResult;
             }
 
-            if (stringValue.Contains("$"))
+            if (stringValue.Contains("$", StringComparison.Ordinal))
             {
                 return ValidationResult.ValidResult;
             }
 
-            if (Version.TryParse(stringValue, out var version))
+            if (Version.TryParse(stringValue, out _))
             {
                 return ValidationResult.ValidResult;
             }

@@ -11,7 +11,7 @@ namespace PackageExplorer
 
         #region IValueConverter Members
 
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             var path = value?.ToString();
             if (path == null)
@@ -43,7 +43,7 @@ namespace PackageExplorer
             if (Path.IsPathRooted(path))
             {
                 separator = Path.DirectorySeparatorChar;
-                var index = path.IndexOf(Path.VolumeSeparatorChar);
+                var index = path.IndexOf(Path.VolumeSeparatorChar, StringComparison.Ordinal);
                 if (index > -1)
                 {
                     prefix = path.Substring(0, Math.Min(path.Length, index + 2));
@@ -53,7 +53,7 @@ namespace PackageExplorer
             else
             {
                 separator = '/';
-                var index = path.IndexOf(Uri.SchemeDelimiter, StringComparison.OrdinalIgnoreCase);
+                var index = path.IndexOf(Uri.SchemeDelimiter, StringComparison.Ordinal);
                 if (index > -1)
                 {
                     prefix = path.Substring(0, Math.Min(path.Length, index + 3));
@@ -82,7 +82,7 @@ namespace PackageExplorer
 
             if (res.Length == 0 && parts.Length > 0)
             {
-                var lastPart = parts[parts.Length - 1];
+                var lastPart = parts[^1];
                 res = lastPart.Substring(Math.Max(0, lastPart.Length - remainingLength));
             }
 

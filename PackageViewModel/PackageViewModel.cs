@@ -6,66 +6,69 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using NuGet.Packaging;
 using NuGetPackageExplorer.Types;
 using NuGetPe;
+
 using LazyPackageCommand = System.Lazy<NuGetPackageExplorer.Types.IPackageCommand, NuGetPackageExplorer.Types.IPackageCommandMetadata>;
 
 namespace PackageExplorerViewModel
 {
     public sealed class PackageViewModel : ViewModelBase, IDisposable
     {
-        #region private fields
-
-        private readonly IList<Lazy<IPackageContentViewer, IPackageContentViewerMetadata>> _contentViewerMetadata;
         private readonly IPackageEditorService _editorService;
         private readonly IMruManager _mruManager;
-        private readonly IPackage _package;
-        private readonly ObservableCollection<PackageIssue> _packageIssues = new ObservableCollection<PackageIssue>();
         private EditablePackageMetadata _packageMetadata;
-        private readonly PackageFolder _packageRoot;
         private readonly IList<Lazy<IPackageRule>> _packageRules;
-        private readonly ISettingsManager _settingsManager;
-        private readonly IUIServices _uiServices;
         private readonly CredentialPublishProvider _credentialPublishProvider;
 
-        private ICommand _addContentFileCommand;
-        private ICommand _addContentFolderCommand;
-        private ICommand _addNewFileCommand;
-        private ICommand _addNewFolderCommand;
-        private ICommand _addScriptCommand;
-        private ICommand _addBuildFileCommand;
-        private ICommand _applyEditCommand;
-        private ICommand _cancelEditCommand;
-        private FileContentInfo _currentFileInfo;
-        private RelayCommand<object> _deleteContentCommand;
-        private ICommand _editCommand;
-        private ICommand _editFileCommand;
-        private ICommand _editMetadataSourceCommand;
-        private ICommand _executePackageCommand;
-        private RelayCommand _exportCommand;
-        private FileEditorViewModel _fileEditorViewModel;
+        private ICommand? _addContentFileCommand;
+        private ICommand? _addContentFolderCommand;
+        private ICommand? _addNewFileCommand;
+        private ICommand? _addNewFolderCommand;
+        private ICommand? _addScriptCommand;
+        private ICommand? _addBuildFileCommand;
+        private ICommand? _applyEditCommand;
+        private ICommand? _cancelEditCommand;
+        private FileContentInfo? _currentFileInfo;
+        private RelayCommand<object>? _deleteContentCommand;
+        private ICommand? _editCommand;
+        private ICommand? _editFileCommand;
+        private ICommand? _editMetadataSourceCommand;
+        private ICommand? _executePackageCommand;
+        private ICommand? _expandAllCommand;
+        private ICommand? _collapseAllCommand;
+        private RelayCommand? _exportCommand;
+        private FileEditorViewModel? _fileEditorViewModel;
+        private SymbolValidatorResultViewModel? _symbolValidatorResultViewModel;
         private bool _hasEdit;
         private bool _isInEditMode;
-        private RelayCommand<object> _openContentFileCommand;
-        private ICommand _openWithContentFileCommand;
+        private RelayCommand<object>? _openContentFileCommand;
+        private ICommand? _openWithContentFileCommand;
+        private string _packagePath;
         private string _packageSource;
-        private RelayCommand _publishCommand;
-        private RelayCommand<object> _renameContentCommand;
-        private SavePackageCommand _saveCommand;
-        private ICommand _saveContentCommand;
-        private object _selectedItem;
+        private RelayCommand? _publishCommand;
+        private RelayCommand<object>? _renameContentCommand;
+        private SavePackageCommand? _saveCommand;
+        private ICommand? _saveContentCommand;
+        private object? _selectedItem;
         private bool _showContentViewer;
         private bool _showPackageAnalysis;
-        private ICommand _viewContentCommand;
-        private ICommand _viewPackageAnalysisCommand;
-        private ICommand _removeSignatureCommand;
+        private ICommand? _viewContentCommand;
+        private ICommand? _viewPackageAnalysisCommand;
+        private ICommand? _removeSignatureCommand;
+        private FileSystemWatcher? _watcher;
+        private readonly bool _initialized;
 
-        #endregion
-
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         internal PackageViewModel(
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
             IPackage package,
+            string path,
             string source,
             IMruManager mruManager,
             IUIServices uiServices,
@@ -73,42 +76,41 @@ namespace PackageExplorerViewModel
             ISettingsManager settingsManager,
             CredentialPublishProvider credentialPublishProvider,
             IList<Lazy<IPackageContentViewer, IPackageContentViewerMetadata>> contentViewerMetadata,
-            IList<Lazy<IPackageRule>> packageRules)
+            IList<Lazy<IPackageRule>> packageRules
+            )
         {
-            _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            SettingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
             _editorService = editorService ?? throw new ArgumentNullException(nameof(editorService));
-            _uiServices = uiServices ?? throw new ArgumentNullException(nameof(uiServices));
+            UIServices = uiServices ?? throw new ArgumentNullException(nameof(uiServices));
             _mruManager = mruManager ?? throw new ArgumentNullException(nameof(mruManager));
             _credentialPublishProvider = credentialPublishProvider ?? throw new ArgumentNullException(nameof(credentialPublishProvider));
-            _package = package ?? throw new ArgumentNullException(nameof(package));
-            _contentViewerMetadata = contentViewerMetadata;
+            Package = package ?? throw new ArgumentNullException(nameof(package));
+            ContentViewerMetadata = contentViewerMetadata;
             _packageRules = packageRules;
 
-            _packageMetadata = new EditablePackageMetadata(_package, _uiServices);
 
+
+
+
+            RootFolder = PathToTreeConverter.Convert(Package.GetFiles().ToList(), this);
+            PackagePath = path; // also sets symbol validator
             PackageSource = source;
+
+            _packageMetadata = new EditablePackageMetadata(Package, UIServices, this);
 
             _isSigned = _packageMetadata.IsSigned;
 
-            _packageRoot = PathToTreeConverter.Convert(_package.GetFiles().ToList(), this);
+            _initialized = true;
+
+            // Forces the symbol validator to kick off
+            OnPropertyChanged(null);
         }
 
+        internal IList<Lazy<IPackageContentViewer, IPackageContentViewerMetadata>> ContentViewerMetadata { get; }
 
+        internal IUIServices UIServices { get; }
 
-        internal IList<Lazy<IPackageContentViewer, IPackageContentViewerMetadata>> ContentViewerMetadata
-        {
-            get { return _contentViewerMetadata; }
-        }
-
-        internal IUIServices UIServices
-        {
-            get { return _uiServices; }
-        }
-
-        internal ISettingsManager SettingsManager
-        {
-            get { return _settingsManager; }
-        }
+        internal ISettingsManager SettingsManager { get; }
 
         public bool IsInEditMetadataMode
         {
@@ -118,9 +120,15 @@ namespace PackageExplorerViewModel
                 if (_isInEditMode != value)
                 {
                     _isInEditMode = value;
-                    OnPropertyChanged("IsInEditMetadataMode");
+                    OnPropertyChanged(nameof(IsInEditMetadataMode));
+                    OnPropertyChanged(nameof(IsSignedOrInEditMetadataMode));
                 }
             }
+        }
+
+        public bool IsSignedOrInEditMetadataMode
+        {
+            get { return IsInEditMetadataMode || IsSigned; }
         }
 
         public bool IsInEditFileMode
@@ -137,13 +145,14 @@ namespace PackageExplorerViewModel
                 {
                     _isSigned = value;
                     OnPropertyChanged(nameof(IsSigned));
-                    _saveCommand.RaiseCanExecuteChangedEvent();
+                    OnPropertyChanged(nameof(IsSignedOrInEditMetadataMode));
+                    _saveCommand?.RaiseCanExecuteChangedEvent();
                 }
             }
         }
 
 
-        public FileEditorViewModel FileEditorViewModel
+        public FileEditorViewModel? FileEditorViewModel
         {
             get { return _fileEditorViewModel; }
             set
@@ -151,11 +160,30 @@ namespace PackageExplorerViewModel
                 if (_fileEditorViewModel != value)
                 {
                     _fileEditorViewModel = value;
-                    OnPropertyChanged("FileEditorViewModel");
-                    OnPropertyChanged("IsInEditFileMode");
+                    OnPropertyChanged(nameof(FileEditorViewModel));
+                    OnPropertyChanged(nameof(IsInEditFileMode));
                 }
             }
         }
+
+        public SymbolValidator SymbolValidator { get; private set; }
+
+        public SymbolValidatorResultViewModel? SymbolValidatorResultViewModel
+        {
+            get { return _symbolValidatorResultViewModel; }
+            set
+            {
+                if (_symbolValidatorResultViewModel != value)
+                {
+                    _symbolValidatorResultViewModel = value;
+                    OnPropertyChanged(nameof(SymbolValidatorResultViewModel));
+                }
+            }
+        }
+
+        public bool PublishedOnNuGetOrg => SymbolValidator!.IsPublicPackage;
+
+        public IPackage Package { get; }
 
         public string WindowTitle
         {
@@ -170,8 +198,8 @@ namespace PackageExplorerViewModel
                 if (_packageMetadata != value)
                 {
                     _packageMetadata = value;
-                    OnPropertyChanged("PackageMetadata");
-                    OnPropertyChanged("IsTokenized");
+                    OnPropertyChanged(nameof(PackageMetadata));
+                    OnPropertyChanged(nameof(IsTokenized));
                 }
             }
         }
@@ -184,7 +212,7 @@ namespace PackageExplorerViewModel
                 if (_showContentViewer != value)
                 {
                     _showContentViewer = value;
-                    OnPropertyChanged("ShowContentViewer");
+                    OnPropertyChanged(nameof(ShowContentViewer));
                 }
             }
         }
@@ -197,12 +225,12 @@ namespace PackageExplorerViewModel
                 if (_showPackageAnalysis != value)
                 {
                     _showPackageAnalysis = value;
-                    OnPropertyChanged("ShowPackageAnalysis");
+                    OnPropertyChanged(nameof(ShowPackageAnalysis));
                 }
             }
         }
 
-        public FileContentInfo CurrentFileInfo
+        public FileContentInfo? CurrentFileInfo
         {
             get { return _currentFileInfo; }
             set
@@ -210,17 +238,17 @@ namespace PackageExplorerViewModel
                 if (_currentFileInfo != value)
                 {
                     _currentFileInfo = value;
-                    OnPropertyChanged("CurrentFileInfo");
+                    OnPropertyChanged(nameof(CurrentFileInfo));
                 }
             }
         }
 
         public ICollection<PackagePart> PackageParts
         {
-            get { return _packageRoot.Children; }
+            get { return RootFolder.Children; }
         }
 
-        public object SelectedItem
+        public object? SelectedItem
         {
             get { return _selectedItem; }
             set
@@ -228,9 +256,56 @@ namespace PackageExplorerViewModel
                 if (_selectedItem != value)
                 {
                     _selectedItem = value;
-                    OnPropertyChanged("SelectedItem");
+                    OnPropertyChanged(nameof(SelectedItem));
                     ((ViewContentCommand)ViewContentCommand).RaiseCanExecuteChanged();
+#if WINDOWS
                     CommandManager.InvalidateRequerySuggested();
+#endif
+                }
+            }
+        }
+
+        public string PackagePath
+        {
+            get { return _packagePath; }
+            set
+            {
+                if (_packagePath != value)
+                {
+                    _packagePath = value;
+
+                    SymbolValidator = new SymbolValidator(Package, PackagePath, RootFolder);
+                    OnPropertyChanged(nameof(PackageSource));
+                    OnPropertyChanged(nameof(SymbolValidator));
+
+                    // This may be a URI or a file
+                    if (Uri.TryCreate(value, UriKind.Absolute, out var result))
+                    {
+                        if (result!.IsFile && File.Exists(value))
+                        {
+#if !NETSTANDARD2_1 // UNO TODO: Use proper platform detection
+                            // Clean up the old one since we can't reliably change the Filter without a race
+                            if (_watcher != null)
+                            {
+                                _watcher.EnableRaisingEvents = false;
+                                _watcher.Changed -= OnFileChange;
+                                _watcher.Deleted -= OnFileChange;
+                                _watcher.Renamed -= OnFileChange;
+                                _watcher.Dispose();
+                                _watcher = null;
+                            }
+
+                            _watcher = new FileSystemWatcher();
+                            _watcher.Changed += OnFileChange;
+                            _watcher.Deleted += OnFileChange;
+                            _watcher.Renamed += OnFileChange;
+
+                            _watcher.Path = Path.GetDirectoryName(PackagePath)!;
+                            _watcher.Filter = Path.GetFileName(PackagePath);
+                            _watcher.EnableRaisingEvents = true;
+#endif
+                        }
+                    }
                 }
             }
         }
@@ -243,7 +318,7 @@ namespace PackageExplorerViewModel
                 if (_packageSource != value)
                 {
                     _packageSource = value;
-                    OnPropertyChanged("PackageSource");
+                    OnPropertyChanged();
                 }
             }
         }
@@ -256,27 +331,72 @@ namespace PackageExplorerViewModel
                 if (_hasEdit != value)
                 {
                     _hasEdit = value;
-                    OnPropertyChanged("HasEdit");
+                    OnPropertyChanged(nameof(HasEdit));
                 }
             }
         }
 
-        public ObservableCollection<PackageIssue> PackageIssues
+        public bool HasFileChangedExternally { get; private set; }
+
+        public ObservableCollection<PackageIssue> PackageIssues { get; } = new ObservableCollection<PackageIssue>();
+
+        public PackageFolder RootFolder { get; }
+
+        public IEnumerable<string> IconPaths
         {
-            get { return _packageIssues; }
+            get
+            {
+                yield return "";
+
+                foreach (var file in RootFolder.GetFiles())
+                {
+                    // https://github.com/NuGet/NuGet.Client/blob/1919a94220568927813bde48f71427b5df1fbe92/src/NuGet.Core/NuGet.Packaging/PackageCreation/Authoring/PackageBuilder.cs#L748-L751
+                    if (file.Path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                        file.Path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                        file.Path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+                    {
+                        yield return file.Path;
+                    }
+                }
+            }
         }
 
-        public PackageFolder RootFolder
+        public IEnumerable<string> ReadmePaths
         {
-            get { return _packageRoot; }
+            get
+            {
+                yield return "";
+
+                foreach (var file in RootFolder.GetFiles())
+                {
+                    // https://github.com/NuGet/NuGet.Client/blob/1919a94220568927813bde48f71427b5df1fbe92/src/NuGet.Core/NuGet.Packaging/PackageCreation/Authoring/PackageBuilder.cs#L875
+                    if (file.Path.EndsWith(NuGet.Configuration.NuGetConstants.ReadmeExtension, StringComparison.OrdinalIgnoreCase))
+                    {
+                        yield return file.Path;
+                    }
+                }
+            }
         }
+
+        public bool IsDisposed { get; private set; }
 
         #region IDisposable Members
 
         public void Dispose()
         {
+            IsDisposed = true;
+
             RootFolder.Dispose();
-            _package.Dispose();
+            Package.Dispose();
+
+            if (_watcher != null)
+            {
+                _watcher.Changed -= OnFileChange;
+                _watcher.Deleted -= OnFileChange;
+                _watcher.Renamed -= OnFileChange;
+                _watcher.Dispose();
+                _watcher = null;
+            }
         }
 
         #endregion
@@ -296,23 +416,34 @@ namespace PackageExplorerViewModel
             }
         }
 
-        private bool AddContentFileCanExecute(object parameter)
+        private bool AddContentFileCanExecute(object? parameter)
         {
             if (IsSigned || IsInEditFileMode)
             {
                 return false;
             }
 
-            parameter = parameter ?? SelectedItem;
+            parameter ??= SelectedItem;
             return parameter == null || parameter is PackageFolder;
         }
 
         private void AddContentFileExecute(object parameter)
         {
-            var folder = (parameter ?? SelectedItem) as PackageFolder;
-            AddExistingFileToFolder(folder ?? RootFolder);
+            DiagnosticsClient.TrackEvent("PackageViewModel_AddContentFileExecute");
+
+            try
+            {
+                var folder = (parameter ?? SelectedItem) as PackageFolder;
+                AddExistingFileToFolder(folder ?? RootFolder);
+            }
+            catch (Exception e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
+            }
+
         }
 
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddExistingFileToFolder(PackageFolder folder)
         {
             var result = UIServices.OpenMultipleFilesDialog(
@@ -362,8 +493,11 @@ namespace PackageExplorerViewModel
             return !RootFolder.ContainsFolder(folderName);
         }
 
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddContentFolderExecute(string folderName)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_AddContentFolderExecute");
+
             RootFolder.AddFolder(folderName);
         }
 
@@ -384,29 +518,30 @@ namespace PackageExplorerViewModel
             }
         }
 
-        private bool AddNewFolderCanExecute(object parameter)
+        private bool AddNewFolderCanExecute(object? parameter)
         {
             if (IsSigned || IsInEditFileMode)
             {
                 return false;
             }
 
-            parameter = parameter ?? SelectedItem;
+            parameter ??= SelectedItem;
             return parameter == null || parameter is PackageFolder;
         }
 
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddNewFolderExecute(object parameter)
         {
-            parameter = parameter ?? SelectedItem ?? RootFolder;
+            DiagnosticsClient.TrackEvent("PackageViewModel_AddNewFolderExecute");
+
+            parameter ??= SelectedItem ?? RootFolder;
             var folder = parameter as PackageFolder;
             var folderName = "NewFolder";
-            var result = UIServices.OpenRenameDialog(
-                folderName,
-                "Provide name for the new folder.",
-                out folderName);
+            var result = UIServices.OpenRenameDialog(folderName, "Provide name for the new folder.", out folderName);
+
             if (result)
             {
-                folder.AddFolder(folderName);
+                folder?.AddFolder(folderName);
             }
         }
 
@@ -449,6 +584,8 @@ namespace PackageExplorerViewModel
 
         private void EditPackageExecute()
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_EditPackageExecute");
+
             _editorService.BeginEdit();
             BeginEdit();
         }
@@ -472,6 +609,8 @@ namespace PackageExplorerViewModel
 
         internal bool ApplyEditExecute()
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_ApplyEditExecute");
+
             var valid = _editorService.CommitEdit();
             if (valid)
             {
@@ -500,6 +639,8 @@ namespace PackageExplorerViewModel
 
         private void CancelEditExecute()
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_CancelEditExecute");
+
             _editorService.CancelEdit();
             CancelEdit();
         }
@@ -533,6 +674,8 @@ namespace PackageExplorerViewModel
 
         private void DeleteContentExecute(object parameter)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_DeleteContentExecute");
+
             if ((parameter ?? SelectedItem) is PackagePart file)
             {
                 file.Delete();
@@ -567,6 +710,8 @@ namespace PackageExplorerViewModel
 
         private void RenameContentExecuted(object parameter)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_RenameContentExecuted");
+
             if ((parameter ?? SelectedItem) is PackagePart part)
             {
                 var result = UIServices.OpenRenameDialog(
@@ -597,24 +742,34 @@ namespace PackageExplorerViewModel
             }
         }
 
-        private bool OpenContentFileCanExecute(object parameter)
+        private bool OpenContentFileCanExecute(object? parameter)
         {
             if (IsInEditFileMode)
             {
                 return false;
             }
 
-            parameter = parameter ?? SelectedItem;
+            parameter ??= SelectedItem;
             return parameter is PackageFile;
         }
 
-        private void OpenContentFileExecute(object parameter)
+        private void OpenContentFileExecute(object? parameter)
         {
-            parameter = parameter ?? SelectedItem;
-            if (parameter is PackageFile file)
+            DiagnosticsClient.TrackEvent("PackageViewModel_OpenContentFileExecute");
+
+            try
             {
-                FileHelper.OpenFileInShell(file, UIServices);
+                parameter ??= SelectedItem;
+                if (parameter is PackageFile file)
+                {
+                    FileHelper.OpenFileInShell(file, UIServices);
+                }
             }
+            catch (Exception e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
+            }
+
         }
 
         #endregion
@@ -652,16 +807,28 @@ namespace PackageExplorerViewModel
 
         private void SaveContentExecute(PackageFile file)
         {
-            var title = "Save " + file.Name;
-            const string filter = "All files (*.*)|*.*";
-            if (UIServices.OpenSaveFileDialog(title, file.Name, /* initial directory */ null, filter, /* overwritePrompt */ true,
-                                              out var selectedFileName, out var filterIndex))
+            DiagnosticsClient.TrackEvent("PackageViewModel_SaveContentExecute");
+
+            try
             {
-                using (var fileStream = File.OpenWrite(selectedFileName))
+                var title = "Save " + file.Name;
+                const string filter = "All files (*.*)|*.*";
+                if (UIServices.OpenSaveFileDialog(title, file.Name, /* initial directory */ null, filter, /* overwritePrompt */ true,
+                                                  out var selectedFileName, out var filterIndex))
                 {
-                    file.GetStream().CopyTo(fileStream);
+                    {
+                        using var fileStream = File.Open(selectedFileName, FileMode.Create, FileAccess.Write, FileShare.Read);
+                        using var packageStream = file.GetStream();
+                        packageStream.CopyTo(fileStream);
+                    }
+                    File.SetLastWriteTime(selectedFileName, file.LastWriteTime.DateTime);
                 }
             }
+            catch (Exception e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
+            }
+
         }
 
         private bool SaveContentCanExecute(PackageFile file)
@@ -703,6 +870,8 @@ namespace PackageExplorerViewModel
 
         private void PublishExecute()
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_PublishExecute");
+
             if (!NetworkInterface.GetIsNetworkAvailable())
             {
                 UIServices.Show(Resources.NoNetworkConnection, MessageLevel.Warning);
@@ -722,16 +891,22 @@ namespace PackageExplorerViewModel
                 return;
             }
 
-            using (var mruSourceManager = new MruPackageSourceManager(
-                new PublishSourceSettings(_settingsManager)))
+            try
             {
-                var publishPackageViewModel = new PublishPackageViewModel(
-                    mruSourceManager,
-                    _settingsManager,
-                    _credentialPublishProvider,
-                    this);
-                _uiServices.OpenPublishDialog(publishPackageViewModel);
+                using var mruSourceManager = new MruPackageSourceManager(new PublishSourceSettings(SettingsManager));
+                using var publishPackageViewModel = new PublishPackageViewModel(
+                                                            mruSourceManager,
+                                                            SettingsManager,
+                                                            UIServices,
+                                                            _credentialPublishProvider,
+                                                            this);
+                UIServices.OpenPublishDialog(publishPackageViewModel);
             }
+            catch (Exception e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
+            }
+
         }
 
         private bool PublishCanExecute()
@@ -758,10 +933,11 @@ namespace PackageExplorerViewModel
             }
         }
 
-        [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes")]
         private void ExportExecute()
         {
-            if (_uiServices.OpenFolderDialog("Choose a folder to export package to:", _folderPath, out var rootPath))
+            DiagnosticsClient.TrackEvent("PackageViewModel_ExportExecute");
+
+            if (UIServices.OpenFolderDialog("Choose a folder to export package to:", _folderPath, out var rootPath))
             {
                 try
                 {
@@ -770,6 +946,10 @@ namespace PackageExplorerViewModel
                 }
                 catch (Exception ex)
                 {
+                    if (!(ex is IOException) && !(ex is ArgumentException) && !(ex is UnauthorizedAccessException))
+                    {
+                        DiagnosticsClient.TrackException(ex, Package, PublishedOnNuGetOrg);
+                    }
                     UIServices.Show(ex.Message, MessageLevel.Error);
                 }
 
@@ -799,19 +979,16 @@ namespace PackageExplorerViewModel
             }
         }
 
-        [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes"),
-         SuppressMessage("Microsoft.Globalization", "CA1303:Do not pass literals as localized parameters",
-             MessageId =
-                 "NuGetPackageExplorer.Types.IUIServices.Show(System.String,NuGetPackageExplorer.Types.MessageLevel)")]
         private void PackageCommandExecute(LazyPackageCommand packageCommand)
         {
             var package = PackageHelper.BuildPackage(PackageMetadata, GetFiles());
             try
             {
-                packageCommand.Value.Execute(package, PackageSource);
+                packageCommand.Value.Execute(package, PackagePath);
             }
             catch (Exception ex)
             {
+                DiagnosticsClient.TrackException(ex, Package, PublishedOnNuGetOrg);
                 UIServices.Show("The command failed with this error message:" +
                                 Environment.NewLine +
                                 Environment.NewLine +
@@ -844,6 +1021,8 @@ namespace PackageExplorerViewModel
             }
             else if (_packageRules != null)
             {
+                DiagnosticsClient.TrackEvent("PackageViewModel_ViewPackageAnalysisExecute");
+
                 IEnumerable<PackageIssue> allIssues = Validate().OrderBy(p => p.Title, StringComparer.CurrentCulture);
                 SetPackageIssues(allIssues);
                 ShowPackageAnalysis = true;
@@ -879,6 +1058,8 @@ namespace PackageExplorerViewModel
 
         private void EditFileCommandExecute(PackagePart file)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_EditFileCommandExecute");
+
             // before editing file, try to commit metadata pending changes to avoid data loss
             if (IsInEditMetadataMode)
             {
@@ -890,7 +1071,14 @@ namespace PackageExplorerViewModel
                 }
             }
 
-            FileEditorViewModel = new FileEditorViewModel(this, file as PackageFile);
+            if (file is PackageFile f)
+            {
+                FileEditorViewModel = new FileEditorViewModel(this, f, UIServices);
+            }
+            else
+            {
+                FileEditorViewModel = null;
+            }
         }
 
         private bool CanEditFileCommandExecute(PackagePart file)
@@ -924,6 +1112,8 @@ namespace PackageExplorerViewModel
 
         private void RemoveSignatureCommandExecute()
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_RemoveSignatureCommandExecute");
+
             // Set this to false, enabling save
             PackageMetadata.ClearSignatures();
             IsSigned = false;
@@ -954,15 +1144,17 @@ namespace PackageExplorerViewModel
 
         private void EditMetadataSourceCommandExecute()
         {
-            FileEditorViewModel = new FileEditorViewModel(this, CreatePackageMetadataFile());
+            DiagnosticsClient.TrackEvent("PackageViewModel_EditMetadataSourceCommandExecute");
+
+            FileEditorViewModel = new FileEditorViewModel(this, CreatePackageMetadataFile(), UIServices);
         }
 
         private bool CanEditMetadataSourceCommandExecute()
         {
-            return !IsSigned && !IsInEditFileMode && !IsInEditMetadataMode;
+            return !IsInEditFileMode && !IsInEditMetadataMode;
         }
 
-        private IEditablePackageFile CreatePackageMetadataFile()
+        public IEditablePackageFile CreatePackageMetadataFile()
         {
             var packageName = PackageMetadata.FileName + NuGetPe.Constants.ManifestExtension;
             var filePath = Path.GetTempFileName();
@@ -989,23 +1181,26 @@ namespace PackageExplorerViewModel
             }
         }
 
-        private bool AddNewFileCanExecute(object parameter)
+        private bool AddNewFileCanExecute(object? parameter)
         {
             if (IsSigned || IsInEditFileMode)
             {
                 return false;
             }
 
-            parameter = parameter ?? SelectedItem;
+            parameter ??= SelectedItem;
             return parameter == null || parameter is PackageFolder;
         }
 
         private void AddNewFileExecute(object parameter)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_AddNewFileExecute");
+
             var folder = (parameter ?? SelectedItem) as PackageFolder;
             AddNewFileToFolder(folder ?? RootFolder);
         }
 
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddNewFileToFolder(PackageFolder folder)
         {
             var result = UIServices.OpenRenameDialog(
@@ -1026,7 +1221,7 @@ namespace PackageExplorerViewModel
 
         #endregion
 
-        #region AddScriptCommand 
+        #region AddScriptCommand
 
         public ICommand AddScriptCommand
         {
@@ -1041,8 +1236,11 @@ namespace PackageExplorerViewModel
             }
         }
 
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddScriptCommandExecute(string scriptName)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_AddScriptCommandExecute");
+
             var content = scriptName.Equals("init.ps1", StringComparison.OrdinalIgnoreCase)
                                  ? Constants.ContentForInit
                                  : Constants.ContentForInstall;
@@ -1061,6 +1259,11 @@ namespace PackageExplorerViewModel
 
         private bool AddScriptCommandCanExecute(string scriptName)
         {
+            if (IsSigned || IsInEditFileMode)
+            {
+                return false;
+            }
+
             if (scriptName != "install.ps1" && scriptName != "init.ps1" && scriptName != "uninstall.ps1")
             {
                 return false;
@@ -1088,6 +1291,10 @@ namespace PackageExplorerViewModel
 
         private bool AddBuildFileCommandCanExecute(string extension)
         {
+            if (IsSigned || IsInEditFileMode)
+            {
+                return false;
+            }
 
             if (SelectedItem is PackageFolder selectedFolder)
             {
@@ -1098,8 +1305,11 @@ namespace PackageExplorerViewModel
             return false;
         }
 
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private void AddBuildFileCommandExecute(string extension)
         {
+            DiagnosticsClient.TrackEvent("PackageViewModel_AddBuildFileCommandExecute");
+
             var fileName = PackageMetadata.Id + extension;
             var sourcePath = FileHelper.CreateTempFile(fileName, Constants.ContentForBuildFile);
 
@@ -1116,10 +1326,53 @@ namespace PackageExplorerViewModel
 
         #endregion
 
+        #region ExpandAllCommand
+
+        public ICommand ExpandAllCommand => _expandAllCommand ??= new RelayCommand(ExpandAllCommandExecute, ExpandAllCommandCanExecute);
+
+        private bool ExpandAllCommandCanExecute()
+        {
+            return PackageParts.Count != 0;
+        }
+
+        private void ExpandAllCommandExecute()
+        {
+            foreach (var folder in RootFolder.GetPackageParts().OfType<PackageFolder>())
+            {
+                folder.IsExpanded = true;
+            }
+        }
+
+        #endregion
+
+        #region CollapseAllCommand
+
+        public ICommand CollapseAllCommand => _collapseAllCommand ??= new RelayCommand(CollapseAllCommandExecute, CollapseAllCommandCanExecute);
+
+        private bool CollapseAllCommandCanExecute()
+        {
+            return PackageParts.Count != 0;
+        }
+
+        private void CollapseAllCommandExecute()
+        {
+            foreach (var folder in RootFolder.GetPackageParts().OfType<PackageFolder>())
+            {
+                folder.IsExpanded = false;
+            }
+        }
+
+        #endregion
+
+        private void OnFileChange(object sender, FileSystemEventArgs e)
+        {
+            HasFileChangedExternally = true;
+        }
+
         private void SetPackageIssues(IEnumerable<PackageIssue> issues)
         {
-            _packageIssues.Clear();
-            _packageIssues.AddRange(issues);
+            PackageIssues.Clear();
+            PackageIssues.AddRange(issues);
         }
 
         public void ShowFile(FileContentInfo fileInfo)
@@ -1128,22 +1381,20 @@ namespace PackageExplorerViewModel
             CurrentFileInfo = fileInfo;
         }
 
-        [SuppressMessage("Microsoft.Design", "CA1024:UsePropertiesWhereAppropriate")]
         internal IEnumerable<IPackageFile> GetFiles()
         {
-            return _packageRoot.GetFiles();
+            return RootFolder.GetPackageFiles();
         }
 
-        [SuppressMessage("Microsoft.Design", "CA1024:UsePropertiesWhereAppropriate")]
-        public string GetCurrentPackageTempFile()
+        public string? GetCurrentPackageTempFile()
         {
             var tempFile = Path.GetTempFileName();
             try
             {
                 // handle signed packages since they cannot be resaved without losing the signature
-                if (IsSigned && _package is ISignaturePackage zip)
+                if (IsSigned)
                 {
-                    File.Copy(zip.Source, tempFile, overwrite: true);
+                    File.Copy(PackagePath, tempFile, overwrite: true);
                 }
                 else
                 {
@@ -1152,6 +1403,10 @@ namespace PackageExplorerViewModel
             }
             catch (Exception e)
             {
+                if (!(e is ArgumentException))
+                {
+                    DiagnosticsClient.TrackException(e, Package, PublishedOnNuGetOrg);
+                }
                 UIServices.Show(e.Message, MessageLevel.Error);
             }
 
@@ -1165,9 +1420,9 @@ namespace PackageExplorerViewModel
 
         public void BeginEdit()
         {
-            // raise the property change event here to force the edit form to rebind 
+            // raise the property change event here to force the edit form to rebind
             // all controls, which will erase all error states, if any, left over from the previous edit
-            OnPropertyChanged("PackageMetadata");
+            OnPropertyChanged(nameof(PackageMetadata));
             IsInEditMetadataMode = true;
         }
 
@@ -1186,25 +1441,27 @@ namespace PackageExplorerViewModel
             OnPropertyChanged(nameof(IsTokenized));
             OnPropertyChanged(nameof(WindowTitle));
 
-            _saveCommand.RaiseCanExecuteChangedEvent();
-            _publishCommand.RaiseCanExecuteChanged();
+            _saveCommand?.RaiseCanExecuteChangedEvent();
+            _publishCommand?.RaiseCanExecuteChanged();
         }
 
         internal void OnSaved(string fileName)
         {
             HasEdit = false;
+            HasFileChangedExternally = false;
             _mruManager.NotifyFileAdded(PackageMetadata, fileName, PackageType.LocalPackage);
         }
 
         internal void NotifyChanges()
         {
             HasEdit = true;
+            OnPropertyChanged(null); // refresh all
         }
 
         public IEnumerable<PackageIssue> Validate()
         {
             var package = PackageHelper.BuildPackage(PackageMetadata, GetFiles());
-            var packageFileName = Path.IsPathRooted(PackageSource) ? Path.GetFileName(PackageSource) : null;
+            var packageFileName = Path.IsPathRooted(PackagePath) ? Path.GetFileName(PackagePath)! : string.Empty;
             return package.Validate(_packageRules.Select(r => r.Value), packageFileName);
         }
 
@@ -1212,7 +1469,7 @@ namespace PackageExplorerViewModel
         {
             if (rootPath == null)
             {
-                throw new ArgumentNullException("rootPath");
+                throw new ArgumentNullException(nameof(rootPath));
             }
 
             if (!Directory.Exists(rootPath))
@@ -1224,9 +1481,26 @@ namespace PackageExplorerViewModel
             RootFolder.Export(rootPath);
 
             // export .nuspec file
-            ExportManifest(Path.Combine(rootPath, PackageMetadata + ".nuspec"));
+            ExportManifest(Path.Combine(rootPath, PackageMetadata.FileName + NuGetPe.Constants.ManifestExtension));
         }
 
+
+        protected override async void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            base.OnPropertyChanged(propertyName);
+
+            if (!_initialized) return;
+
+            // Refresh the symbol validator
+            // No need to refresh for certain properties that don't affect the data
+            if (propertyName == nameof(SelectedItem) ||
+                propertyName == nameof(CurrentFileInfo) ||
+                propertyName == nameof(SymbolValidatorResultViewModel))
+                return;
+
+            var result = await Task.Run(async () => await SymbolValidator.Validate().ConfigureAwait(false)).ConfigureAwait(true);
+            SymbolValidatorResultViewModel = new SymbolValidatorResultViewModel(result);
+        }
         internal void ExportManifest(string fullpath, bool askForConfirmation = true, bool includeFilesSection = true)
         {
             if (File.Exists(fullpath) && askForConfirmation)
@@ -1240,30 +1514,34 @@ namespace PackageExplorerViewModel
                 }
             }
 
-            var rootPath = Path.GetDirectoryName(fullpath);
+            DiagnosticsClient.TrackEvent("PackageViewModel_ExportManifest");
+            var rootPath = Path.GetDirectoryName(fullpath)!;
 
-            using (Stream fileStream = File.Create(fullpath))
+            using Stream fileStream = File.Create(fullpath);
+            var manifest = Manifest.Create(PackageMetadata);
+            if (includeFilesSection)
             {
-                var manifest = Manifest.Create(PackageMetadata);
-                if (includeFilesSection)
-                {
-                    var tempPath = Path.GetTempPath();
+                var tempPath = Path.GetTempPath();
 
-                    manifest.Files.AddRange(RootFolder.GetFiles().Select(
-                        f => new ManifestFile
-                        {
-                            Source = string.IsNullOrEmpty(f.OriginalPath()) || f.OriginalPath().StartsWith(tempPath, StringComparison.OrdinalIgnoreCase) ? f.Path : PathUtility.RelativePathTo(rootPath, f.OriginalPath()),
-                            Target = f.Path
-                        })
-                    );
-                }
-                using (var ms = new MemoryStream())
-                {
-                    manifest.Save(ms);
-                    ms.Position = 0;
-                    ManifestUtility.SaveToStream(ms, fileStream);
-                }
+                manifest.Files.AddRange(RootFolder.GetPackageFiles().Select(
+                    f => new ManifestFile
+                    {
 
+                        Source = string.IsNullOrEmpty(f.OriginalPath()) || f.OriginalPath()?.StartsWith(tempPath, StringComparison.OrdinalIgnoreCase) == true ? f.Path : PathUtility.RelativePathTo(rootPath, f.OriginalPath()!),
+                        Target = f.Path
+                    })
+                );
+            }
+            using var ms = new MemoryStream();
+            try
+            {
+                manifest.Save(ms);
+                ms.Position = 0;
+                ManifestUtility.SaveToStream(ms, fileStream);
+            }
+            catch (Exception e)
+            {
+                UIServices.Show(e.Message, MessageLevel.Error);
             }
         }
 
@@ -1294,8 +1572,12 @@ namespace PackageExplorerViewModel
             CurrentFileInfo = null;
         }
 
-        public void AddDraggedAndDroppedFiles(PackageFolder folder, string[] fileNames)
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
+        public void AddDraggedAndDroppedFiles(PackageFolder? folder, string[] fileNames)
         {
+            if (fileNames is null)
+                throw new ArgumentNullException(nameof(fileNames));
+
             if (folder == null)
             {
                 bool? rememberedAnswer = null;
@@ -1314,7 +1596,7 @@ namespace PackageExplorerViewModel
                         {
                             // ask user if he wants to move file
                             var answer = UIServices.ConfirmMoveFile(
-                                Path.GetFileName(file),
+                                Path.GetFileName(file)!,
                                 guessFolderName, fileNames.Length - i - 1);
 
                             if (answer.Item1 == null)
@@ -1338,11 +1620,11 @@ namespace PackageExplorerViewModel
                         {
                             if (RootFolder.ContainsFolder(guessFolderName))
                             {
-                                targetFolder = (PackageFolder)RootFolder[guessFolderName];
+                                targetFolder = (PackageFolder)RootFolder[guessFolderName]!;
                             }
                             else
                             {
-                                targetFolder = RootFolder.AddFolder(guessFolderName);
+                                targetFolder = RootFolder.AddFolder(guessFolderName)!;
                             }
                         }
                         else
@@ -1350,7 +1632,7 @@ namespace PackageExplorerViewModel
                             targetFolder = RootFolder;
                         }
 
-                        targetFolder.AddFile(file);
+                        targetFolder?.AddFile(file);
                     }
                     else if (Directory.Exists(file))
                     {
@@ -1374,17 +1656,23 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public void AddDraggedAndDroppedFileDescriptors(PackageFolder folder, IEnumerable<(string FilePath, Stream Stream)> fileDescriptors)
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
+        public static void AddDraggedAndDroppedFileDescriptors(PackageFolder folder, IEnumerable<(string FilePath, Stream? Stream)> fileDescriptors)
         {
+            if (folder is null)
+                throw new ArgumentNullException(nameof(folder));
+            if (fileDescriptors is null)
+                throw new ArgumentNullException(nameof(fileDescriptors));
             foreach (var fileDescription in fileDescriptors)
             {
                 var parts = fileDescription.FilePath.Split(Path.DirectorySeparatorChar);
 
-                var name = parts[parts.Length - 1];
+                var name = parts[^1];
                 var parentFolder = folder;
                 for (var i = 0; i < parts.Length - 1; i++)
                 {
-                    parentFolder = (PackageFolder)parentFolder[parts[i]];
+                    parentFolder = (PackageFolder)parentFolder[parts[i]]!;
+                    if (parentFolder is null) throw new ArgumentNullException(nameof(folder)); // verify each part isn't null. should never happen
                 }
 
                 if (fileDescription.Stream != null) // file
@@ -1408,16 +1696,16 @@ namespace PackageExplorerViewModel
             }
 
             // any deps
-            return PackageMetadata.DependencySets
+            return PackageMetadata.DependencyGroups
                     .SelectMany(ds => ds.Packages)
                     .Any(dp => dp.VersionRange.MinVersion?.IsTokenized() == true || dp.VersionRange.MaxVersion?.IsTokenized() == true);
         }
 
         public bool IsTokenized => IsPackageTokenized();
 
-        internal bool IsShowingFileContent(PackageFile file)
+        internal bool IsShowingFileContent(PackageFile? file)
         {
-            return ShowContentViewer && CurrentFileInfo.File == file;
+            return ShowContentViewer && CurrentFileInfo?.File == file;
         }
 
         internal void ShowFileContent(PackageFile file)
@@ -1425,7 +1713,6 @@ namespace PackageExplorerViewModel
             ViewContentCommand.Execute(file);
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Globalization", "CA1303:Do not pass literals as localized parameters", MessageId = "NuGetPackageExplorer.Types.IUIServices.ConfirmCloseEditor(System.String,System.String)"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes")]
         internal bool SaveMetadataAfterEditSource(string editedFilePath)
         {
             if (!File.Exists(editedFilePath))
@@ -1433,31 +1720,27 @@ namespace PackageExplorerViewModel
                 return true;
             }
 
-            using (Stream metadataFileStream = File.OpenRead(editedFilePath))
+            using Stream metadataFileStream = File.OpenRead(editedFilePath);
+            try
             {
-                try
-                {
-                    using (var str = ManifestUtility.ReadManifest(metadataFileStream))
-                    {
-                        var manifest = Manifest.ReadFrom(str, true);
-                        var newMetadata = new EditablePackageMetadata(manifest.Metadata, _uiServices);
-                        PackageMetadata = newMetadata;
+                using var str = ManifestUtility.ReadManifest(metadataFileStream);
+                var manifest = Manifest.ReadFrom(str, true);
+                var newMetadata = new EditablePackageMetadata(manifest.Metadata, UIServices, this);
+                PackageMetadata = newMetadata;
 
-                        return true;
-                    }
+                return true;
 
-                }
-                catch (Exception exception)
-                {
-                    var confirmExit = UIServices.ConfirmCloseEditor(
-                        "There is an error in the metadata source.",
-                        exception.GetBaseException().Message +
-                        Environment.NewLine +
-                        Environment.NewLine +
-                        "Do you want to cancel your changes and return?");
+            }
+            catch (Exception exception)
+            {
+                var confirmExit = UIServices.ConfirmCloseEditor(
+                    "There is an error in the metadata source.",
+                    exception.GetBaseException().Message +
+                    Environment.NewLine +
+                    Environment.NewLine +
+                    "Do you want to cancel your changes and return?");
 
-                    return confirmExit;
-                }
+                return confirmExit;
             }
         }
     }

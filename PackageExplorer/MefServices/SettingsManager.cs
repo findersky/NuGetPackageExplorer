@@ -1,149 +1,350 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.ComponentModel.Composition;
+using System.Configuration;
+using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using Newtonsoft.Json;
 using NuGetPackageExplorer.Types;
-using NuGetPe;
-using PackageExplorer.Properties;
+using Windows.Storage;
+using NuGet.Configuration;
+using NpeConstants = NuGetPe.NuGetConstants;
+
+#if !HAS_UNO
+using OSVersionHelper;
+using NpeSettings = PackageExplorer.Properties.Settings;
+#endif
 
 namespace PackageExplorer
 {
     [Export(typeof(ISettingsManager))]
-    internal class SettingsManager : ISettingsManager
+    internal class SettingsManager : ISettingsManager, INotifyPropertyChanged
     {
-        public const string ApiKeysSectionName = "apikeys";
+        public event PropertyChangedEventHandler? PropertyChanged;
 
-        #region ISettingsManager Members
+        private readonly object _lockObject = new object();
 
-        public bool IsFirstTimeAfterUpdate
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
-            get
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private T GetValue<T>([CallerMemberName] string? name = null)
+        {
+            lock (_lockObject)
             {
-                return Settings.Default.IsFirstTimeAfterMigrate;
+                object value;
+                try
+                {
+#if !HAS_UNO
+                    if (WindowsVersionHelper.HasPackageIdentity)
+                    {
+                        value = GetValueFromLocalSettings<T>(name!)!;
+                    }
+                    else
+                    {
+                        value = NpeSettings.Default[name];
+                        if (typeof(T) == typeof(List<string>) && value is StringCollection sc)
+                        {
+                            value = sc.Cast<string>().ToList();
+                        }
+                    }
+#else
+                    Windows.Storage.ApplicationData.Current.LocalSettings.Values.TryGetValue(name, out value!);
+#endif
+
+                    if (value is T t)
+                    {
+                        return t;
+                    }
+                }
+#if !HAS_UNO
+                catch (ConfigurationErrorsException)
+                {
+                    // Corrupt settings file
+                    NpeSettings.Default.Reset();
+
+                    // Try getting it again
+                    value = NpeSettings.Default[name];
+                    if (typeof(T) == typeof(List<string>) && value is StringCollection sc)
+                    {
+                        value = sc.Cast<string>().ToList();
+                    }
+
+                    if (value is T t)
+                    {
+                        return t;
+                    }
+                }
+#endif
+                catch (UnauthorizedAccessException)
+                { }
+                catch (IOException)
+                {
+                    // not much we can do if we can't read/write the settings file
+                }
+
+                return default!;
             }
+        }
+
+        // Don't load these types inline
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static object? GetValueFromLocalSettings<T>(string name)
+        {
+            object value;
+            var settings = ApplicationData.Current.LocalSettings;
+            value = settings.Values[name];
+            if (typeof(T) == typeof(List<string>) && value is string str)
+            {
+                value = JsonConvert.DeserializeObject<List<string>>(str);
+            }
+
+            return value;
+        }
+
+        private void SetValue(object? value, string? name = null, [CallerMemberName] string? propertyName = null)
+        {
+            name ??= propertyName;
+
+            lock (_lockObject)
+            {
+                try
+                {
+#if !HAS_UNO
+                   if (WindowsVersionHelper.HasPackageIdentity)
+                    {
+                        SetValueInLocalSettings(value, name!);
+                    }
+                    else
+                    {
+                        if (value is List<string> list)
+                        {
+                            var sc = new StringCollection();
+                            sc.AddRange(list.ToArray());
+                            value = sc;
+                        }
+                        NpeSettings.Default[name] = value;
+                    }
+#else
+                    Windows.Storage.ApplicationData.Current.LocalSettings.Values[name] = value;
+#endif
+                }
+                catch (UnauthorizedAccessException)
+                { }
+                catch (IOException)
+                {
+                    // not much we can do if we can't read/write the settings file
+                }
+            }
+
+            OnPropertyChanged(propertyName);
+        }
+
+        // Don't load these types inline
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void SetValueInLocalSettings(object? value, string name)
+        {
+            var settings = ApplicationData.Current.LocalSettings;
+            if (value is List<string> list)
+            {
+                value = JsonConvert.SerializeObject(list);
+            }
+            settings.Values[name] = value;
         }
 
         public IList<string> GetMruFiles()
         {
-            var files = Settings.Default.MruFiles;
-            return files == null ? new List<string>() : files.Cast<string>().ToList();
+            return GetValue<List<string>>("MruFiles") ?? new List<string>();
         }
 
         public void SetMruFiles(IEnumerable<string> files)
         {
-            var sc = new StringCollection();
-            sc.AddRange(files.ToArray());
-            Settings.Default.MruFiles = sc;
+            SetValue(files.ToList(), "MruFiles");
         }
 
         public IList<string> GetPackageSources()
         {
-            var sources = Settings.Default.MruPackageSources;
-            var packageSources = (sources == null) ? new List<string>() : sources.Cast<string>().ToList();
-            return packageSources;
+            var list = new List<string>();
+            var nugetSettings = Settings.LoadDefaultSettings(null);
+            foreach (var packageSource in SettingsUtility.GetEnabledSources(nugetSettings))
+            {
+                list.Add(packageSource.Source);
+            }
+
+            var npeSources = GetValue<List<string>>("MruPackageSources");
+            if (npeSources != null)
+            {
+                foreach (var npeSource in npeSources)
+                {
+                    if (!list.Contains(npeSource))
+                    {
+                        list.Add(npeSource);
+                    }
+                }
+            }
+
+            return list;
         }
 
         public void SetPackageSources(IEnumerable<string> sources)
         {
-            var sc = new StringCollection();
-            sc.AddRange(sources.ToArray());
-            Settings.Default.MruPackageSources = sc;
+            SetValue(sources.ToList(), "MruPackageSources");
         }
 
         public string ActivePackageSource
         {
-            get { return Settings.Default.PackageSource; }
-            set { Settings.Default.PackageSource = value; }
+            get => GetValue<string>("PackageSource") ?? NpeConstants.DefaultFeedUrl;
+            set => SetValue(value, "PackageSource");
         }
 
         public IList<string> GetPublishSources()
         {
-            var sources = Settings.Default.PublishPackageSources;
-            var packageSources = (sources == null) ? new List<string>() : sources.Cast<string>().ToList();
-            return packageSources;
+            var list = new List<string>();
+            var nugetSettings = Settings.LoadDefaultSettings(null);
+            foreach (var packageSource in SettingsUtility.GetEnabledSources(nugetSettings))
+            {
+                list.Add(packageSource.Source);
+            }
+
+            var npeSources = GetValue<List<string>>("PublishPackageSources");
+            if (npeSources != null)
+            {
+                foreach (var npeSource in npeSources)
+                {
+                    if (!list.Contains(npeSource))
+                    {
+                        list.Add(npeSource);
+                    }
+                }
+            }
+
+            return list;
         }
 
         public void SetPublishSources(IEnumerable<string> sources)
         {
-            var sc = new StringCollection();
-            sc.AddRange(sources.ToArray());
-            Settings.Default.PublishPackageSources = sc;
+            SetValue(sources.ToList(), "PublishPackageSources");
         }
 
         public string ActivePublishSource
         {
-            get { return Settings.Default.PublishPackageLocation; }
-            set { Settings.Default.PublishPackageLocation = value; }
+            get
+            {
+                var publishSource = GetValue<string>("PublishPackageLocation");
+                if (publishSource == null)
+                {
+                    var nugetSettings = Settings.LoadDefaultSettings(null);
+                    publishSource = SettingsUtility.GetDefaultPushSource(nugetSettings);
+                }
+                return publishSource ?? NpeConstants.NuGetPublishFeed;
+            }
+            set => SetValue(value, "PublishPackageLocation");
         }
 
-        public string ReadApiKey(string source)
+        public string? ReadApiKey(string source)
         {
-            var settings = new UserSettings(new PhysicalFileSystem(Environment.CurrentDirectory));
-            var key = settings.GetDecryptedValue(ApiKeysSectionName, source);
-
-            if (string.IsNullOrEmpty(key))
-            {
-                if (IsFirstTimeAfterUpdate && (
-                    source.Equals(NuGetConstants.V2FeedUrl, StringComparison.OrdinalIgnoreCase) ||
-                    source.Equals(NuGetConstants.V2LegacyFeedUrl, StringComparison.OrdinalIgnoreCase)
-                ))
-                {
-                    key = Settings.Default.PublishPrivateKey;
-                }
-            }
-
-            return key;
+            var nugetSettings = Settings.LoadDefaultSettings(null);
+            return SettingsUtility.GetDecryptedValueForAddItem(nugetSettings, ConfigurationConstants.ApiKeys, source);
         }
 
         public void WriteApiKey(string source, string apiKey)
         {
-            var settings = new UserSettings(new PhysicalFileSystem(Environment.CurrentDirectory));
-            settings.SetEncryptedValue(ApiKeysSectionName, source, apiKey);
+            var nugetSettings = Settings.LoadDefaultSettings(null);
+            SettingsUtility.SetEncryptedValueForAddItem(nugetSettings, ConfigurationConstants.ApiKeys, source, apiKey);
         }
 
         public bool ShowPrereleasePackages
         {
-            get { return Settings.Default.ShowPrereleasePackages; }
-            set { Settings.Default.ShowPrereleasePackages = value; }
+            get => GetValue<bool?>() ?? true;
+            set => SetValue(value);
         }
 
         public bool AutoLoadPackages
         {
-            get { return Settings.Default.AutoLoadPackages; }
-            set { Settings.Default.AutoLoadPackages = value; }
+            get => GetValue<bool?>() ?? true;
+            set => SetValue(value);
         }
 
         public bool PublishAsUnlisted
         {
-            get
-            {
-                return Settings.Default.PublishAsUnlisted;
-            }
-            set
-            {
-                Settings.Default.PublishAsUnlisted = value;
-            }
+            get => GetValue<bool?>() ?? false;
+            set => SetValue(value);
         }
 
         public string SigningCertificate
         {
-            get => Settings.Default.SigningCertificate;
-            set => Settings.Default.SigningCertificate = value;
+            get => GetValue<string>();
+            set => SetValue(value);
         }
 
-        public string TimestampServer
+        public string? TimestampServer
         {
-            get => Settings.Default.TimestampServer;
-            set => Settings.Default.TimestampServer = value;
+            get => GetValue<string>();
+            set => SetValue(value);
         }
 
         public string SigningHashAlgorithmName
         {
-            get => Settings.Default.SigningHashAlgorithmName;
-            set => Settings.Default.SigningHashAlgorithmName = value;
+            get => GetValue<string>();
+            set => SetValue(value);
         }
 
-        #endregion
+        public int FontSize
+        {
+            get => GetValue<int?>() ?? 12;
+            set => SetValue(value);
+        }
+
+        public bool ShowTaskShortcuts
+        {
+            get => GetValue<bool?>() ?? true;
+            set => SetValue(value);
+        }
+
+        public string WindowPlacement
+        {
+            get => GetValue<string>();
+            set => SetValue(value);
+        }
+
+        public double PackageChooserDialogWidth
+        {
+            get => GetValue<double?>() ?? 630;
+            set => SetValue(value);
+        }
+
+        public double PackageChooserDialogHeight
+        {
+            get => GetValue<double?>() ?? 450;
+            set => SetValue(value);
+        }
+
+        public double PackageContentHeight
+        {
+            get => GetValue<double?>() ?? 400;
+            set => SetValue(value);
+        }
+
+        public double ContentViewerHeight
+        {
+            get => GetValue<double?>() ?? 400;
+            set => SetValue(value);
+        }
+
+        public bool WordWrap
+        {
+            get => GetValue<bool?>() ?? false;
+            set => SetValue(value);
+        }
+
+        public bool ShowLineNumbers
+        {
+            get => GetValue<bool?>() ?? false;
+            set => SetValue(value);
+        }
     }
 }

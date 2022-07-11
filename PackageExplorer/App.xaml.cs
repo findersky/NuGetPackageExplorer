@@ -1,22 +1,36 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.ComponentModel.Composition.Hosting;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using NuGet.Common;
 using NuGet.Configuration;
 using NuGet.Credentials;
 using NuGet.Protocol;
+using NuGetPackageExplorer.Types;
+using NuGetPe;
 using PackageExplorerViewModel;
 using PackageExplorerViewModel.Types;
 using Settings = PackageExplorer.Properties.Settings;
 
 namespace PackageExplorer
 {
+#pragma warning disable CA1001 // Types that own disposable fields should be disposable
     public partial class App : Application
+#pragma warning restore CA1001 // Types that own disposable fields should be disposable
     {
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
+        public App()
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
+        {
+            DiagnosticsClient.Initialize();
+        }
+
         private CompositionContainer _container;
 
         [SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope")]
@@ -42,16 +56,27 @@ namespace PackageExplorer
 
         private async void Application_Startup(object sender, StartupEventArgs e)
         {
+            DiagnosticsClient.TrackEvent("AppStart", new Dictionary<string, string> { { "launchType", e.Args.Length > 0 ? "fileAssociation" : "shortcut" } });
+
+            // Overwrite settings with the real instance
+            Resources["Settings"] = Container.GetExportedValue<ISettingsManager>();
+
+            NuGet.Protocol.Core.Types.UserAgent.SetUserAgentString(new NuGet.Protocol.Core.Types.UserAgentStringBuilder("NuGet Package Explorer")
+                                                                   .WithOSDescription(RuntimeInformation.RuntimeIdentifier));
+
             InitCredentialService();
             HttpHandlerResourceV3.CredentialsSuccessfullyUsed = (uri, credentials) =>
             {
-                Container.GetExportedValue<ICredentialManager>().Add(credentials, uri);
+                Container.GetExportedValue<ICredentialManager>()!.Add(credentials, uri);
                 InitCredentialService();
             };
 
             MigrateSettings();
 
-            var window = Container.GetExportedValue<MainWindow>();
+            var window = Container.GetExportedValue<MainWindow>()!;
+            var uiServices = Container.GetExportedValue<IUIServices>()!;
+            uiServices.Initialize();
+
             window.Show();
 
             if (e.Args.Length > 0)
@@ -67,22 +92,38 @@ namespace PackageExplorer
 
         private void InitCredentialService()
         {
-            HttpHandlerResourceV3.CredentialService = new Lazy<ICredentialService>(() => new CredentialService(new ICredentialProvider[] {
-                Container.GetExportedValue<CredentialManagerProvider>(),
-                Container.GetExportedValue<CredentialPublishProvider>(),
-                Container.GetExportedValue<CredentialDialogProvider>(),
-            }, nonInteractive: false));
+            Task<IEnumerable<ICredentialProvider>> getProviders()
+            {
+                return Task.FromResult<IEnumerable<ICredentialProvider>>(new ICredentialProvider[]
+                {
+                    Container.GetExportedValue<CredentialConfigProvider>()!,
+                    Container.GetExportedValue<CredentialManagerProvider>()!,
+                    Container.GetExportedValue<CredentialPublishProvider>()!,
+                    Container.GetExportedValue<CredentialDialogProvider>()!
+                });
+            };
+
+            HttpHandlerResourceV3.CredentialService =
+                new Lazy<ICredentialService>(() => new CredentialService(
+                                                      new AsyncLazy<IEnumerable<ICredentialProvider>>(() => getProviders()),
+                                                      nonInteractive: false,
+                                                      handlesDefaultCredentials: false));
+
         }
 
         private static void MigrateSettings()
         {
-            var settings = Settings.Default;
-            if (settings.IsFirstTime)
+            try
             {
-                settings.Upgrade();
-                settings.IsFirstTime = false;
-                settings.Save();
+                var settings = Settings.Default;
+                if (settings.IsFirstTime)
+                {
+                    settings.Upgrade();
+                    settings.IsFirstTime = false;
+                    settings.Save();
+                }
             }
+            catch { }
         }
 
         private static async Task<bool> LoadFile(MainWindow window, string file)
@@ -105,10 +146,6 @@ namespace PackageExplorer
                 _container.Dispose();
             }
 
-            // IMPORTANT: Call this after calling _container.Dispose(). Some exports relies on Dispose()
-            // being called to save settings values.
-            Settings.Default.IsFirstTimeAfterMigrate = false;
-
             // Try to save, if there's an IO error, just ignore it here, nothing we can do
             try
             {
@@ -117,12 +154,18 @@ namespace PackageExplorer
             catch
             {
             }
+
+            DiagnosticsClient.TrackEvent("AppExit");
+
+            DiagnosticsClient.OnExit();
         }
 
         private void PackageIconImage_ImageFailed(object sender, ExceptionRoutedEventArgs e)
         {
-            var image = sender as Image;
-            image.Source = Images.DefaultPackageIcon;
+            if (sender is Image image)
+            {
+                image.Source = Images.DefaultPackageIcon;
+            }
         }
     }
 }

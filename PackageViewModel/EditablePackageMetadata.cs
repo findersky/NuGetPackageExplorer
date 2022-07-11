@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -16,60 +17,100 @@ namespace PackageExplorerViewModel
 {
     public sealed class EditablePackageMetadata : IPackageMetadata, IDataErrorInfo, INotifyPropertyChanged
     {
-        private readonly Dictionary<string, string> _propertyErrors = new Dictionary<string, string>();
-        private readonly IUIServices uiServices;
-        private string _authors;
-        private string _copyright;
-        private string _description;
-        private Uri _iconUrl;
+        private readonly Dictionary<string, string?> _propertyErrors = new();
+        private readonly IUIServices _uiServices;
+        private string? _authors;
+        private string? _copyright;
+        private string? _description;
+        private string? _icon;
+        private Uri? _iconUrl;
+        private string? _readme;
         private string _id;
-        private string _language;
-        private Uri _licenseUrl;
-        private string _owners;
-        private Uri _projectUrl;
-        private string _releaseNotes;
+        private string? _language;
+        private Uri? _licenseUrl;
+        private string? _owners;
+        private Uri? _projectUrl;
+        private string? _releaseNotes;
         private bool _requireLicenseAcceptance;
-        private string _summary;
-        private string _tags;
+        private string? _summary;
+        private string? _tags;
         private bool _serviceable;
-        private string _title;
+        private string? _title;
         private NuGetVersion _version;
         private bool _isSigned;
         private ICollection<PackageDependencyGroup> _dependencySets;
         private ICollection<PackageReferenceSet> _packageAssemblyReferences;
-        private Version _minClientVersion;
+        private ICollection<FrameworkReferenceGroup> _frameworkReferenceGroups;
+        private Version? _minClientVersion;
 
         private readonly RelayCommand _showValidationResultsCommand;
 
         public ICommand ShowValidationResultsCommand => _showValidationResultsCommand;
 
-        private EditablePackageMetadata()
+        public EditablePackageMetadata(IPackageMetadata source, IUIServices uiServices, PackageViewModel packageViewModel)
         {
+            if (source is null)
+                throw new ArgumentNullException(nameof(source));
+            _uiServices = uiServices;
             _showValidationResultsCommand = new RelayCommand(OnShowValidationResult, () => ValidationResult != null);
+
+            _id = source.Id;
+            _version = source.Version;
+            PackageTypes = new ObservableCollection<PackageType>(source.PackageTypes);
+            Title = source.Title;
+            Authors = ConvertToString(source.Authors);
+            Owners = ConvertToString(source.Owners);
+            Icon = source.Icon;
+            IconUrl = FixIconUrl(source.IconUrl);
+            Readme = source.Readme;
+            ProjectUrl = source.ProjectUrl;
+            RequireLicenseAcceptance = source.RequireLicenseAcceptance;
+            DevelopmentDependency = source.DevelopmentDependency;
+            Description = source.Description;
+            Summary = source.Summary;
+            ReleaseNotes = source.ReleaseNotes;
+            Copyright = source.Copyright;
+            Language = source.Language;
+            Tags = source.Tags;
+            Serviceable = source.Serviceable;
+            _dependencySets = new ObservableCollection<PackageDependencyGroup>(source.DependencyGroups);
+            FrameworkAssemblies = new ObservableCollection<FrameworkAssemblyReference>(source.FrameworkReferences);
+            _packageAssemblyReferences = new ObservableCollection<PackageReferenceSet>();
+            ContentFiles = new ObservableCollection<ManifestContentFiles>(source.ContentFiles);
+            _frameworkReferenceGroups = new ObservableCollection<FrameworkReferenceGroup>(source.FrameworkReferenceGroups);
+
+            if(source.Repository != null)
+            {
+                Repository = new RepositoryMetadataViewModel(source.Repository);
+                _underlyingRepository = source.Repository;
+            }
+
+            LicenseMetadata = source.LicenseMetadata;
+            LicenseUrl = LicenseMetadata != null ? null : source.LicenseUrl; // This will be set for back compat, but should show up as null here
+
+            if (source.PackageAssemblyReferences != null)
+            {
+                PackageAssemblyReferences.AddRange(source.PackageAssemblyReferences);
+            }
+            MinClientVersion = source.MinClientVersion;
+
+            PackageViewModel = packageViewModel;
         }
 
-        public EditablePackageMetadata(IPackageMetadata source, IUIServices uiServices)
-            : this()
+        public EditablePackageMetadata(IPackage source, IUIServices uiServices, PackageViewModel packageViewModel)
+            : this((IPackageMetadata)source, uiServices, packageViewModel)
         {
-            CopyFrom(source);
-            this.uiServices = uiServices;
-        }
-
-        public EditablePackageMetadata(IPackage source, IUIServices uiServices)
-            : this()
-        {
-            CopyFrom(source);
             // Zip Packages may be signed, we need to load that data async
             if (source is ISignaturePackage zip)
             {
                 LoadSignatureData(zip);
             }
-
-            this.uiServices = uiServices;
         }
 
         public async void LoadSignatureData(ISignaturePackage package)
         {
+            if (package is null)
+                throw new ArgumentNullException(nameof(package));
             if (package.IsSigned)
             {
                 PublisherSignature = package.PublisherSignature;
@@ -83,15 +124,16 @@ namespace PackageExplorerViewModel
 
         private void OnShowValidationResult()
         {
-            uiServices.OpenSignatureValidationDialog(ValidationResult);
+            Debug.Assert(ValidationResult != null, nameof(ValidationResult) + " != null");
+            _uiServices.OpenSignatureValidationDialog(ValidationResult);
         }
 
-        public string Authors
+        public string? Authors
         {
             get { return _authors; }
             set
             {
-                if (string.IsNullOrWhiteSpace(value))
+                if (string.IsNullOrWhiteSpace(value) && !PackageTypes.Any(pt => string.Equals(pt.Name, "SymbolsPackage", StringComparison.OrdinalIgnoreCase)))
                 {
                     const string message = "Authors is required.";
                     SetError("Authors", message);
@@ -102,19 +144,19 @@ namespace PackageExplorerViewModel
                 if (_authors != value)
                 {
                     _authors = value;
-                    RaisePropertyChange("Authors");
+                    RaisePropertyChange(nameof(Authors));
                 }
             }
         }
 
-        public SignatureInfo PublisherSignature
+        public SignatureInfo? PublisherSignature
         {
-            get { return publisherCertificate; }
+            get { return _publisherCertificate; }
             set
             {
-                if (publisherCertificate != value)
+                if (_publisherCertificate != value)
                 {
-                    publisherCertificate = value;
+                    _publisherCertificate = value;
                     RaisePropertyChange(nameof(PublisherSignature));
                 }
             }
@@ -133,33 +175,38 @@ namespace PackageExplorerViewModel
             }
         }
 
-        public ValidationResultViewModel ValidationResult
+        public PackageViewModel PackageViewModel
         {
-            get { return validationResult; }
+            get;
+        }
+
+        public ValidationResultViewModel? ValidationResult
+        {
+            get { return _validationResult; }
             set
             {
-                if (validationResult != value)
+                if (_validationResult != value)
                 {
-                    validationResult = value;
+                    _validationResult = value;
                     RaisePropertyChange(nameof(ValidationResult));
                 }
             }
         }
 
-        public SignatureInfo RepositorySignature
+        public SignatureInfo? RepositorySignature
         {
-            get { return repositoryCertificate; }
+            get { return _repositoryCertificate; }
             set
             {
-                if (repositoryCertificate != value)
+                if (_repositoryCertificate != value)
                 {
-                    repositoryCertificate = value;
+                    _repositoryCertificate = value;
                     RaisePropertyChange(nameof(RepositorySignature));
                 }
             }
         }
 
-        public string Owners
+        public string? Owners
         {
             get { return _owners; }
             set
@@ -167,7 +214,7 @@ namespace PackageExplorerViewModel
                 if (_owners != value)
                 {
                     _owners = value;
-                    RaisePropertyChange("Owners");
+                    RaisePropertyChange(nameof(Owners));
                 }
             }
         }
@@ -184,13 +231,13 @@ namespace PackageExplorerViewModel
                 if (_packageAssemblyReferences != value)
                 {
                     _packageAssemblyReferences = value;
-                    RaisePropertyChange("PackageAssemblyReferences");
+                    RaisePropertyChange(nameof(PackageAssemblyReferences));
                 }
             }
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
-        public ICollection<PackageDependencyGroup> DependencySets
+        public ICollection<PackageDependencyGroup> DependencyGroups
         {
             get
             {
@@ -201,7 +248,24 @@ namespace PackageExplorerViewModel
                 if (_dependencySets != value)
                 {
                     _dependencySets = value;
-                    RaisePropertyChange("DependencySets");
+                    RaisePropertyChange(nameof(DependencyGroups));
+                }
+            }
+        }
+
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
+        public ICollection<FrameworkReferenceGroup> FrameworkReferenceGroups
+        {
+            get
+            {
+                return _frameworkReferenceGroups;
+            }
+            set
+            {
+                if (_frameworkReferenceGroups != value)
+                {
+                    _frameworkReferenceGroups = value;
+                    RaisePropertyChange(nameof(FrameworkReferenceGroups));
                 }
             }
         }
@@ -210,12 +274,12 @@ namespace PackageExplorerViewModel
 
         #region IDataErrorInfo Members
 
-        public string Error
+        public string? Error
         {
             get { return null; }
         }
 
-        public string this[string columnName]
+        public string? this[string columnName]
         {
             get { return IsValid(columnName); }
         }
@@ -224,12 +288,14 @@ namespace PackageExplorerViewModel
 
         #region INotifyPropertyChanged Members
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
         private bool _developmentDependency;
-        private RepositoryMetadata repository;
-        private SignatureInfo publisherCertificate;
-        private ValidationResultViewModel validationResult;
-        private SignatureInfo repositoryCertificate;
+        private RepositoryMetadataViewModel? _repository;
+        private readonly RepositoryMetadata? _underlyingRepository;
+        private LicenseMetadata? _licenseMetadata;
+        private SignatureInfo? _publisherCertificate;
+        private ValidationResultViewModel? _validationResult;
+        private SignatureInfo? _repositoryCertificate;
 
         #endregion
 
@@ -257,7 +323,7 @@ namespace PackageExplorerViewModel
                 if (_id != value)
                 {
                     _id = value;
-                    RaisePropertyChange("Id");
+                    RaisePropertyChange(nameof(Id));
                 }
             }
         }
@@ -278,12 +344,12 @@ namespace PackageExplorerViewModel
                 if (_version != value)
                 {
                     _version = value;
-                    RaisePropertyChange("Version");
+                    RaisePropertyChange(nameof(Version));
                 }
             }
         }
 
-        public string Title
+        public string? Title
         {
             get { return _title; }
             set
@@ -291,12 +357,50 @@ namespace PackageExplorerViewModel
                 if (_title != value)
                 {
                     _title = value;
-                    RaisePropertyChange("Title");
+                    RaisePropertyChange(nameof(Title));
                 }
             }
         }
 
-        public Uri IconUrl
+        public string? IconOrIconUrl
+        {
+            get => Icon ?? IconUrl?.OriginalString;
+            set
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    Icon = null;
+                    IconUrl = null;
+                }
+
+                if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+                {
+                    Icon = null;
+                    IconUrl = uri;
+                }
+                else
+                {
+                    Icon = value;
+                    IconUrl = null;
+                }
+                RaisePropertyChange(nameof(IconOrIconUrl));
+            }
+        }
+
+        public string? Icon
+        {
+            get => _icon;
+            set
+            {
+                if (_icon != value)
+                {
+                    _icon = value;
+                    RaisePropertyChange(nameof(Icon));
+                }
+            }
+        }
+
+        public Uri? IconUrl
         {
             get { return _iconUrl; }
             set
@@ -304,12 +408,25 @@ namespace PackageExplorerViewModel
                 if (_iconUrl != value)
                 {
                     _iconUrl = value;
-                    RaisePropertyChange("IconUrl");
+                    RaisePropertyChange(nameof(IconUrl));
                 }
             }
         }
 
-        public Uri LicenseUrl
+        public string? Readme
+        {
+            get { return _readme; }
+            set
+            {
+                if (_readme != value)
+                {
+                    _readme = value;
+                    RaisePropertyChange(nameof(Readme));
+                }
+            }
+        }
+
+        public Uri? LicenseUrl
         {
             get { return _licenseUrl; }
             set
@@ -317,12 +434,12 @@ namespace PackageExplorerViewModel
                 if (_licenseUrl != value)
                 {
                     _licenseUrl = value;
-                    RaisePropertyChange("LicenseUrl");
+                    RaisePropertyChange(nameof(LicenseUrl));
                 }
             }
         }
 
-        public Uri ProjectUrl
+        public Uri? ProjectUrl
         {
             get { return _projectUrl; }
             set
@@ -330,7 +447,7 @@ namespace PackageExplorerViewModel
                 if (_projectUrl != value)
                 {
                     _projectUrl = value;
-                    RaisePropertyChange("ProjectUrl");
+                    RaisePropertyChange(nameof(ProjectUrl));
                 }
             }
         }
@@ -343,8 +460,8 @@ namespace PackageExplorerViewModel
                 if (value != _requireLicenseAcceptance)
                 {
                     _requireLicenseAcceptance = value;
-                    RaisePropertyChange("RequireLicenseAcceptance");
-                    RaisePropertyChange("LicenseUrl");
+                    RaisePropertyChange(nameof(RequireLicenseAcceptance));
+                    RaisePropertyChange(nameof(LicenseUrl));
                 }
             }
         }
@@ -357,12 +474,12 @@ namespace PackageExplorerViewModel
                 if (value != _developmentDependency)
                 {
                     _developmentDependency = value;
-                    RaisePropertyChange("DevelopmentDependency");
+                    RaisePropertyChange(nameof(DevelopmentDependency));
                 }
             }
         }
 
-        public string Description
+        public string? Description
         {
             get { return _description; }
             set
@@ -379,12 +496,12 @@ namespace PackageExplorerViewModel
                 if (_description != value)
                 {
                     _description = value;
-                    RaisePropertyChange("Description");
+                    RaisePropertyChange(nameof(Description));
                 }
             }
         }
 
-        public string Summary
+        public string? Summary
         {
             get { return _summary; }
             set
@@ -392,12 +509,12 @@ namespace PackageExplorerViewModel
                 if (_summary != value)
                 {
                     _summary = value;
-                    RaisePropertyChange("Summary");
+                    RaisePropertyChange(nameof(Summary));
                 }
             }
         }
 
-        public string ReleaseNotes
+        public string? ReleaseNotes
         {
             get { return _releaseNotes; }
             set
@@ -405,12 +522,12 @@ namespace PackageExplorerViewModel
                 if (_releaseNotes != value)
                 {
                     _releaseNotes = value;
-                    RaisePropertyChange("ReleaseNotes");
+                    RaisePropertyChange(nameof(ReleaseNotes));
                 }
             }
         }
 
-        public string Copyright
+        public string? Copyright
         {
             get { return _copyright; }
             set
@@ -418,12 +535,12 @@ namespace PackageExplorerViewModel
                 if (_copyright != value)
                 {
                     _copyright = value;
-                    RaisePropertyChange("Copyright");
+                    RaisePropertyChange(nameof(Copyright));
                 }
             }
         }
 
-        public string Language
+        public string? Language
         {
             get { return _language; }
             set
@@ -431,12 +548,12 @@ namespace PackageExplorerViewModel
                 if (_language != value)
                 {
                     _language = value;
-                    RaisePropertyChange("Language");
+                    RaisePropertyChange(nameof(Language));
                 }
             }
         }
 
-        public string Tags
+        public string? Tags
         {
             get { return _tags; }
             set
@@ -444,7 +561,7 @@ namespace PackageExplorerViewModel
                 if (_tags != value)
                 {
                     _tags = value;
-                    RaisePropertyChange("Tags");
+                    RaisePropertyChange(nameof(Tags));
                 }
             }
         }
@@ -457,12 +574,12 @@ namespace PackageExplorerViewModel
                 if (value != _serviceable)
                 {
                     _serviceable = value;
-                    RaisePropertyChange("Serviceable");
+                    RaisePropertyChange(nameof(Serviceable));
                 }
             }
         }
 
-        public Version MinClientVersion
+        public Version? MinClientVersion
         {
             get { return _minClientVersion; }
             set
@@ -470,10 +587,12 @@ namespace PackageExplorerViewModel
                 if (_minClientVersion != value)
                 {
                     _minClientVersion = value;
-                    RaisePropertyChange("MinClientVersion");
+                    RaisePropertyChange(nameof(MinClientVersion));
                 }
             }
         }
+
+        RepositoryMetadata? IPackageMetadata.Repository => _underlyingRepository;
 
         IEnumerable<string> IPackageMetadata.Authors
         {
@@ -483,11 +602,6 @@ namespace PackageExplorerViewModel
         IEnumerable<string> IPackageMetadata.Owners
         {
             get { return SplitString(Owners); }
-        }
-
-        IEnumerable<PackageDependencyGroup> IPackageMetadata.DependencyGroups
-        {
-            get { return DependencySets; }
         }
 
         IEnumerable<FrameworkAssemblyReference> IPackageMetadata.FrameworkReferences
@@ -500,59 +614,43 @@ namespace PackageExplorerViewModel
             get { return PackageAssemblyReferences; }
         }
 
+        IEnumerable<FrameworkReferenceGroup> IPackageMetadata.FrameworkReferenceGroups
+        {
+            get { return FrameworkReferenceGroups; }
+        }
+
         IEnumerable<ManifestContentFiles> IPackageMetadata.ContentFiles => ContentFiles;
-        public ICollection<ManifestContentFiles> ContentFiles { get; set; }
+        public ICollection<ManifestContentFiles> ContentFiles { get; }
 
 
         IEnumerable<PackageType> IPackageMetadata.PackageTypes => PackageTypes;
-        public ICollection<PackageType> PackageTypes { get; set; }
+        public ICollection<PackageType> PackageTypes { get; }
 
-        public RepositoryMetadata Repository
+        public RepositoryMetadataViewModel? Repository
         {
-            get { return repository; }
+            get { return _repository; }
             set
             {
-                repository = value;
+                _repository = value;
                 RaisePropertyChange(nameof(Repository));
+            }
+        }
+
+        public LicenseMetadata? LicenseMetadata
+        {
+            get { return _licenseMetadata; }
+            set
+            {
+                _licenseMetadata = value;
+                RaisePropertyChange(nameof(LicenseMetadata));
             }
         }
 
         #endregion
 
-        public void CopyFrom(IPackageMetadata source)
-        {
-            Id = source.Id;
-            Version = source.Version;
-            Title = source.Title;
-            Authors = ConvertToString(source.Authors);
-            Owners = ConvertToString(source.Owners);
-            IconUrl = FixIconUrl(source.IconUrl);
-            LicenseUrl = source.LicenseUrl;
-            ProjectUrl = source.ProjectUrl;
-            RequireLicenseAcceptance = source.RequireLicenseAcceptance;
-            DevelopmentDependency = source.DevelopmentDependency;
-            Description = source.Description;
-            Summary = source.Summary;
-            ReleaseNotes = source.ReleaseNotes;
-            Copyright = source.Copyright;
-            Language = source.Language;
-            Tags = source.Tags;
-            Serviceable = source.Serviceable;
-            DependencySets = new ObservableCollection<PackageDependencyGroup>(source.DependencyGroups);
-            FrameworkAssemblies = new ObservableCollection<FrameworkAssemblyReference>(source.FrameworkReferences);
-            PackageAssemblyReferences = new ObservableCollection<PackageReferenceSet>();
-            ContentFiles = new ObservableCollection<ManifestContentFiles>(source.ContentFiles);
-            PackageTypes = new ObservableCollection<PackageType>(source.PackageTypes);
-            Repository = source.Repository;
 
-            if (source.PackageAssemblyReferences != null)
-            {
-                PackageAssemblyReferences.AddRange(source.PackageAssemblyReferences);
-            }
-            MinClientVersion = source.MinClientVersion;
-        }
 
-        private static Uri FixIconUrl(Uri uri)
+        private static Uri? FixIconUrl(Uri uri)
         {
             if (uri == null || uri.IsAbsoluteUri)
             {
@@ -562,12 +660,12 @@ namespace PackageExplorerViewModel
             var path = uri.OriginalString;
             if (path.StartsWith("//", StringComparison.Ordinal))
             {
-                path = path.Substring(1);
+                path = path[1..];
             }
 
             var builder = new UriBuilder
             {
-                Scheme = "http",
+                Scheme = "https",
                 Host = "www.nuget.org",
                 Path = path
             };
@@ -575,7 +673,7 @@ namespace PackageExplorerViewModel
             return builder.Uri;
         }
 
-        private static IEnumerable<string> SplitString(string text)
+        private static IEnumerable<string> SplitString(string? text)
         {
             return text == null ? Enumerable.Empty<string>() : text.Split(',').Select(a => a.Trim());
         }
@@ -595,13 +693,15 @@ namespace PackageExplorerViewModel
         /// </summary>
         public string FileName => Id + "." + ManifestUtility.ReplaceMetadataWithToken(Version.ToFullString());
 
-        private string IsValid(string propertyName)
+        IEnumerable<PackageDependencyGroup> IPackageMetadata.DependencyGroups => DependencyGroups;
+
+        private string? IsValid(string propertyName)
         {
-            if (propertyName == "LicenseUrl")
+            if (propertyName == nameof(LicenseUrl) || propertyName == nameof(LicenseMetadata))
             {
-                if (RequireLicenseAcceptance && LicenseUrl == null)
+                if (RequireLicenseAcceptance && LicenseUrl == null && LicenseMetadata == null)
                 {
-                    return "Enabling license acceptance requires a license url.";
+                    return "Enabling license acceptance requires a license url, expression, or file.";
                 }
             }
 
@@ -609,7 +709,7 @@ namespace PackageExplorerViewModel
             return error;
         }
 
-        private void SetError(string property, string error)
+        private void SetError(string property, string? error)
         {
             if (string.IsNullOrEmpty(error))
             {

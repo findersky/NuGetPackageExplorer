@@ -5,13 +5,13 @@ using NuGet.Packaging;
 
 namespace PackageExplorerViewModel
 {
-    internal static class PathToTreeConverter
+    public static class PathToTreeConverter
     {
-        public static PackageFolder Convert(List<IPackageFile> paths, PackageViewModel viewModel)
+        public static PackageFolder Convert(List<IPackageFile> paths, PackageViewModel? viewModel)
         {
             if (paths == null)
             {
-                throw new ArgumentNullException("paths");
+                throw new ArgumentNullException(nameof(paths));
             }
 
             paths.Sort((p1, p2) => string.Compare(p1.Path, p2.Path, StringComparison.OrdinalIgnoreCase));
@@ -25,6 +25,7 @@ namespace PackageExplorerViewModel
             return root;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private static void Parse(PackageFolder root, List<Tuple<IPackageFile, string[]>> parsedPaths, int level,
                                   int start, int end)
         {

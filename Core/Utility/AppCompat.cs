@@ -1,16 +1,39 @@
 ﻿using System;
+using System.Linq;
 using System.Runtime.InteropServices;
+
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
 
 namespace NuGetPe
 {
     public static class AppCompat
     {
-        private static readonly Lazy<bool> isWindows10S;
+#pragma warning disable IDE1006 // Naming Styles
+        private static readonly Lazy<bool> isWindows10S = new Lazy<bool>(GetIsWin10S);
+#pragma warning restore IDE1006 // Naming Styles
+
         public static bool IsWindows10S => isWindows10S.Value;
 
-        static AppCompat()
+        public static bool IsWasm => RuntimeInformation.OSArchitecture ==
+#if NET5_0
+            Architecture.Wasm;
+#else
+            (Architecture)4; // Architecture.Wasm definition is missing under NETSTANDARD2_1 & NETCOREAPP3_1
+#endif
+
+        public static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+        public static bool IsSupported(params RuntimeFeature[] features) => features.All(IsSupported);
+        public static bool IsSupported(RuntimeFeature feature)
         {
-            isWindows10S = new Lazy<bool>(GetIsWin10S);
+            return feature switch
+            {
+                RuntimeFeature.Cryptography => !IsWasm,
+                RuntimeFeature.NativeMethods => IsWindows,
+                RuntimeFeature.DiaSymReader => IsWindows,
+
+                _ => throw new ArgumentOutOfRangeException($"Unknown feature flag: {feature}")
+            };
         }
 
         private static bool GetIsWin10S()
@@ -42,5 +65,15 @@ namespace NuGetPe
             int dwSpMajorVersion,
             int dwSpMinorVersion,
             out int pdwReturnedProductType);
+    }
+
+    public enum RuntimeFeature
+    {
+        /// <summary>
+        /// affects: X509, Oid, Pkcs, SignedCms
+        /// </summary>
+        Cryptography,
+        NativeMethods,
+        DiaSymReader,
     }
 }

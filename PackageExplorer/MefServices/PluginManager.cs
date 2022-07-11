@@ -6,21 +6,27 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using NuGet.Versioning;
 using NuGetPackageExplorer.Types;
 using NuGetPe;
+using Windows.Storage;
+
+#if !HAS_UNO
+using OSVersionHelper;
+#endif
 
 namespace PackageExplorer
 {
     [Export(typeof(IPluginManager))]
-    internal class PluginManager : IPluginManager
+    internal class PluginManager : IPluginManager, IDisposable
     {
         private const string NuGetDirectoryName = "NuGet";
         private const string PluginsDirectoryName = "PackageExplorerPlugins";
         private const string DeleteMeExtension = ".deleteme";
-        private static string[] FrameworkFolderForAssemblies = new string[] {
+        private static readonly string[] FrameworkFolderForAssemblies = new string[] {
             "lib\\net40",
             "lib\\net45",
             "lib\\net451",
@@ -30,46 +36,100 @@ namespace PackageExplorer
             "lib\\net462",
             "lib\\net47",
             "lib\\net471",
+            "lib\\net472",
+            "lib\\net48",
+            "lib\\netcoreapp3.0",
+            "lib\\netcoreapp3.1",
+            "lib\\net5.0",
+            "lib\\net6.0",
         };
 
         // %localappdata%/NuGet/PackageExplorerPlugins
-        private static readonly string PluginsDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            NuGetDirectoryName,
-            PluginsDirectoryName
-            );
+        private static readonly string PluginsDirectory = GetPluginDirectory()!;
+
+
+
+        private static string? GetPluginDirectory()
+        {
+#if !HAS_UNO
+            // Try getting it from the app model first
+            if (WindowsVersionHelper.HasPackageIdentity)
+            {
+                try
+                {
+                    return GetCachePathFromLocalCache();
+                }
+                catch
+                {
+                    // Don't care here, not on Win7 or running in an app model context
+                }
+            }
+#endif
+
+            return GetCachePath(Environment.GetFolderPath);
+        }
+
+        // Don't load these types inline
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static string? GetCachePathFromLocalCache()
+        {
+            // Get the localized special folder for local app data
+            var local = new DirectoryInfo(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)).Name;
+            return GetCachePath(_ => Path.Combine(ApplicationData.Current.LocalCacheFolder.Path, local));
+        }
+
+        private static string? GetCachePath(Func<Environment.SpecialFolder, string> getFolderPath)
+        {
+            var localAppDataPath = getFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrEmpty(localAppDataPath))
+            {
+                return null;
+            }
+            return Path.Combine(localAppDataPath, "NuGet", PluginsDirectoryName);
+        }
+
 
         private AggregateCatalog _pluginCatalog;
         private Dictionary<PluginInfo, DirectoryCatalog> _pluginToCatalog;
         private List<PluginInfo> _plugins;
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         public PluginManager(AggregateCatalog catalog)
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
             if (catalog == null)
             {
-                throw new ArgumentNullException("catalog");
+                throw new ArgumentNullException(nameof(catalog));
             }
 
             // clean up from previous run
             DeleteAllDeleteMeFiles();
             EnsurePluginCatalog(catalog);
+
+            // Make sure it's never null
+            _plugins ??= new List<PluginInfo>();
         }
 
         [Import]
         public Lazy<IUIServices> UIServices { get; set; }
 
-        #region IPluginManager Members
+#region IPluginManager Members
 
         public ICollection<PluginInfo> Plugins
         {
             get { return _plugins; }
         }
 
-        public PluginInfo AddPlugin(IPackage plugin)
+        public PluginInfo? AddPlugin(IPackage plugin)
         {
             if (plugin == null)
             {
-                throw new ArgumentNullException("plugin");
+                throw new ArgumentNullException(nameof(plugin));
+            }
+
+            if (PluginsDirectory == null)
+            {
+                return null;
             }
 
             try
@@ -117,6 +177,7 @@ namespace PackageExplorer
             }
             catch (Exception exception)
             {
+                DiagnosticsClient.TrackException(exception);
                 UIServices.Value.Show(exception.Message, MessageLevel.Error);
             }
 
@@ -127,7 +188,12 @@ namespace PackageExplorer
         {
             if (plugin == null)
             {
-                throw new ArgumentNullException("plugin");
+                throw new ArgumentNullException(nameof(plugin));
+            }
+
+            if (PluginsDirectory == null)
+            {
+                return false;
             }
 
             var targetPath = GetTargetPath(plugin);
@@ -142,7 +208,9 @@ namespace PackageExplorer
                 }
                 catch (IOException ex)
                 {
-                    UIServices.Value.Show(ex.Message, MessageLevel.Error);
+
+                    // When called via the ctor, this isn't available yet
+                    UIServices?.Value.Show(ex.Message, MessageLevel.Error);
                     return false;
                 }
             }
@@ -150,11 +218,11 @@ namespace PackageExplorer
             return false;
         }
 
-        #endregion
+#endregion
 
         private void EnsurePluginCatalog(AggregateCatalog mainCatalog)
         {
-            if (_pluginCatalog != null)
+            if (_pluginCatalog != null || PluginsDirectory == null)
             {
                 return;
             }
@@ -162,10 +230,22 @@ namespace PackageExplorer
             var pluginDirectoryInfo = new DirectoryInfo(PluginsDirectory);
             if (!pluginDirectoryInfo.Exists)
             {
-                // creates the plugins directory if it doesn't exist
-                var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                var nugetDirectory = CreateChildDirectory(new DirectoryInfo(localAppData), NuGetDirectoryName);
-                CreateChildDirectory(nugetDirectory, PluginsDirectoryName);
+                try
+                {
+                    // creates the plugins directory if it doesn't exist
+                    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                    var nugetDirectory = CreateChildDirectory(new DirectoryInfo(localAppData), NuGetDirectoryName);
+                    CreateChildDirectory(nugetDirectory, PluginsDirectoryName);
+                }
+                catch (IOException)
+                {
+                    return;
+                }
+                catch (UnauthorizedAccessException) // Some systems are throwing with this, not sure why but nothing we can do
+                {
+                    return;
+                }
+
             }
 
             _plugins = new List<PluginInfo>(GetAllPlugins());
@@ -191,7 +271,7 @@ namespace PackageExplorer
             var directoryInfo = new DirectoryInfo(PluginsDirectory);
             if (directoryInfo.Exists)
             {
-                return directoryInfo.GetDirectories().Select(ConvertFromDirectoryToPluginInfo).Where(p => p != null);
+                return directoryInfo.GetDirectories().Select(ConvertFromDirectoryToPluginInfo).Where(p => p != null)!;
             }
             else
             {
@@ -199,6 +279,7 @@ namespace PackageExplorer
             }
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         private bool AddPluginToCatalog(PluginInfo pluginInfo, string targetPath, bool quietMode)
         {
             try
@@ -211,11 +292,12 @@ namespace PackageExplorer
                 }
                 return true;
             }
-            catch (ReflectionTypeLoadException exception)
+            catch (Exception exception) when (exception is ReflectionTypeLoadException || exception is IOException || exception is TypeLoadException)
             {
                 _pluginToCatalog.Remove(pluginInfo);
 
-                var errorMessage = BuildErrorMessage(exception);
+
+                var errorMessage = exception is ReflectionTypeLoadException re ? BuildErrorMessage(re) : exception.Message;
                 if (quietMode)
                 {
                     Trace.WriteLine(errorMessage, "Plugins Loader");
@@ -227,6 +309,11 @@ namespace PackageExplorer
 
                 return false;
             }
+        }
+
+        public void Dispose()
+        {
+            _pluginCatalog.Dispose();
         }
 
         private void RemovePluginFromCatalog(PluginInfo pluginInfo)
@@ -245,7 +332,7 @@ namespace PackageExplorer
             return child;
         }
 
-        private PluginInfo ConvertFromDirectoryToPluginInfo(DirectoryInfo directory)
+        private PluginInfo? ConvertFromDirectoryToPluginInfo(DirectoryInfo directory)
         {
             var name = directory.Name;
             const string regex = @"^(.+)\[(.+?)\]$";
@@ -273,7 +360,7 @@ namespace PackageExplorer
         {
             if (targetPath.EndsWith("\\", StringComparison.OrdinalIgnoreCase))
             {
-                targetPath = targetPath.Substring(0, targetPath.Length - 1);
+                targetPath = targetPath[0..^1];
             }
 
             // when a plugin assembly is loaded by the app, we can't delete it directly.
@@ -286,6 +373,11 @@ namespace PackageExplorer
         {
             try
             {
+                if (PluginsDirectory == null)
+                {
+                    return;
+                }
+
                 var pluginDirectoryInfo = new DirectoryInfo(PluginsDirectory);
                 if (pluginDirectoryInfo.Exists)
                 {
@@ -299,7 +391,7 @@ namespace PackageExplorer
 
                         // also delete the real plugin directory
                         var pluginDirectory = Path.Combine(PluginsDirectory,
-                                                              Path.GetFileNameWithoutExtension(file.Name));
+                                                              Path.GetFileNameWithoutExtension(file.Name)!);
                         if (Directory.Exists(pluginDirectory))
                         {
                             Directory.Delete(pluginDirectory, recursive: true);
@@ -320,9 +412,12 @@ namespace PackageExplorer
             builder.AppendLine();
             builder.AppendLine();
 
-            foreach (var loaderException in exception.LoaderExceptions)
+            foreach (var loaderException in exception.LoaderExceptions!)
             {
-                builder.AppendLine(loaderException.Message);
+                if(loaderException != null)
+                {
+                    builder.AppendLine(loaderException.Message);
+                }                
             }
 
             return builder.ToString();

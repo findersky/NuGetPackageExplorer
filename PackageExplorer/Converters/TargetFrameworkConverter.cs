@@ -7,7 +7,7 @@ namespace PackageExplorer
 {
     public class TargetFrameworkConverter : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        public object? Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
             var framework = (NuGetFramework)value;
             if (framework == null)
@@ -18,7 +18,7 @@ namespace PackageExplorer
             return framework.GetShortFolderName();
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        public object? ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
             var stringValue = (string)value;
             if (string.IsNullOrEmpty(stringValue))
@@ -26,13 +26,21 @@ namespace PackageExplorer
                 return null;
             }
 
-            var framework = NuGetFramework.Parse(stringValue);
-            if (framework.IsUnsupported)
+            try
+            {
+                var framework = NuGetFramework.Parse(stringValue);
+                if (framework.IsUnsupported)
+                {
+                    return DependencyProperty.UnsetValue;
+                }
+
+                return framework;
+            }
+            catch (Exception) // could be an invalid value
             {
                 return DependencyProperty.UnsetValue;
             }
 
-            return framework;
         }
     }
 }

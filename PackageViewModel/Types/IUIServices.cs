@@ -1,7 +1,6 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Net;
-using System.Windows.Threading;
+using System.Threading.Tasks;
 
 namespace NuGetPackageExplorer.Types
 {
@@ -14,7 +13,9 @@ namespace NuGetPackageExplorer.Types
 
     public interface IUIServices
     {
-        bool OpenSaveFileDialog(string title, string defaultFileName, string initialDirectory, string filter, bool overwritePrompt,
+        object Initialize();
+
+        bool OpenSaveFileDialog(string title, string defaultFileName, string? initialDirectory, string filter, bool overwritePrompt,
                                 out string selectedFilePath, out int selectedFilterIndex);
 
         bool OpenFileDialog(string title, string filter, out string selectedFileName);
@@ -22,7 +23,7 @@ namespace NuGetPackageExplorer.Types
 
         bool OpenRenameDialog(string currentName, string description, out string newName);
 
-        bool OpenCredentialsDialog(string target, out NetworkCredential networkCredential);
+        bool OpenCredentialsDialog(string target, out NetworkCredential? networkCredential);
 
         bool OpenPublishDialog(object viewModel);
         bool OpenSignatureValidationDialog(object viewModel);
@@ -34,15 +35,12 @@ namespace NuGetPackageExplorer.Types
         bool? ConfirmWithCancel(string title, string message);
         void Show(string message, MessageLevel messageLevel);
 
-        [SuppressMessage("Microsoft.Design", "CA1006:DoNotNestGenericTypesInMemberSignatures")]
         Tuple<bool?, bool> ConfirmMoveFile(string fileName, string targetFolder, int numberOfItemsLeft);
 
         bool TrySelectPortableFramework(out string portableFramework);
 
         bool ConfirmCloseEditor(string title, string message);
 
-        bool? AskToInstallNpeOnWindows8();
-
-        DispatcherOperation BeginInvoke(Action action);
+        Task BeginInvoke(Action action);
     }
 }

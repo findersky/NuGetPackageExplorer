@@ -1,22 +1,36 @@
 ﻿using System;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Windows.Data;
 using NuGet.Frameworks;
+
+#if HAS_UNO
+using Windows.UI.Xaml.Data;
+
+using _CultureInfo = System.String;
+#else
+using System.Windows.Data;
+
+using _CultureInfo = System.Globalization.CultureInfo;
+#endif
 
 namespace PackageExplorer
 {
     public class FrameworkNameConverter : IValueConverter
     {
-        private static string[] WellknownPackageFolders = new string[] { "content", "lib", "tools", "build", "ref" };
+        private static readonly string[] WellknownPackageFolders = new string[] { "content", "lib", "tools", "build", "ref" };
 
-        #region IValueConverter Members
-
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public object Convert(object value, Type targetType, object parameter, _CultureInfo culture)
         {
+            if (value is NuGetFramework framework)
+            {
+                return framework.DotNetFrameworkName;
+            }
+
             var path = (string)value;
             var name = Path.GetFileName(path);
+
+            if (string.IsNullOrEmpty(path))
+                return string.Empty;
 
             var parts = path.Split('\\');
             if (parts.Length == 2 &&
@@ -53,11 +67,10 @@ namespace PackageExplorer
             return string.Empty;
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        public object ConvertBack(object value, Type targetType, object parameter, _CultureInfo culture)
         {
             throw new NotImplementedException();
         }
 
-        #endregion
     }
 }

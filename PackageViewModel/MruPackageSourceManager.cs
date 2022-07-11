@@ -8,9 +8,10 @@ namespace PackageExplorerViewModel
     {
         private const int MaxItem = 5;
         private readonly ISourceSettings _sourceSettings;
-        private readonly ObservableCollection<string> _sources = new ObservableCollection<string>();
 
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         public MruPackageSourceManager(ISourceSettings sourceSettings)
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
             _sourceSettings = sourceSettings;
             LoadDataFromSettings();
@@ -18,20 +19,13 @@ namespace PackageExplorerViewModel
 
         public string ActivePackageSource { get; set; }
 
-        public ObservableCollection<string> PackageSources
-        {
-            get { return _sources; }
-        }
-
-        #region IDisposable Members
-
+        public ObservableCollection<string> PackageSources { get; } = new ObservableCollection<string>();
+        
         public void Dispose()
         {
-            _sourceSettings.SetSources(_sources);
+            _sourceSettings.SetSources(PackageSources);
             _sourceSettings.ActiveSource = ActivePackageSource;
         }
-
-        #endregion
 
         private void LoadDataFromSettings()
         {
@@ -52,15 +46,15 @@ namespace PackageExplorerViewModel
             }
 
             // if there is no source (this happens after upgrading), add the default source to it
-            if (_sources.Count == 0 || !_sources.Contains(_sourceSettings.DefaultSource))
+            if (PackageSources.Count == 0 || !PackageSources.Contains(_sourceSettings.DefaultSource))
             {
-                _sources.Insert(0, _sourceSettings.DefaultSource);
+                PackageSources.Insert(0, _sourceSettings.DefaultSource);
             }
 
             if (string.IsNullOrEmpty(ActivePackageSource))
             {
                 // assign the active package source to the first one if it's not already assigned
-                ActivePackageSource = _sources[0];
+                ActivePackageSource = PackageSources[0];
             }
         }
 
@@ -73,7 +67,7 @@ namespace PackageExplorerViewModel
         {
             if (newSource == null)
             {
-                throw new ArgumentNullException("newSource");
+                throw new ArgumentNullException(nameof(newSource));
             }
 
             var defaultFeed = _sourceSettings.DefaultSource;
@@ -83,26 +77,26 @@ namespace PackageExplorerViewModel
                 return;
             }
 
-            _sources.Remove(defaultFeed);
+            PackageSources.Remove(defaultFeed);
 
             SmartRemove(newSource);
-            _sources.Insert(0, newSource);
+            PackageSources.Insert(0, newSource);
 
-            if (_sources.Count > MaxItem)
+            if (PackageSources.Count > MaxItem)
             {
-                _sources.RemoveAt(_sources.Count - 1);
+                PackageSources.RemoveAt(PackageSources.Count - 1);
             }
 
-            _sources.Insert(0, defaultFeed);
+            PackageSources.Insert(0, defaultFeed);
         }
 
         private void SmartRemove(string item)
         {
-            for (var i = 0; i < _sources.Count; i++)
+            for (var i = 0; i < PackageSources.Count; i++)
             {
-                if (_sources[i].Equals(item, StringComparison.OrdinalIgnoreCase))
+                if (PackageSources[i].Equals(item, StringComparison.OrdinalIgnoreCase))
                 {
-                    _sources.RemoveAt(i);
+                    PackageSources.RemoveAt(i);
                     return;
                 }
             }

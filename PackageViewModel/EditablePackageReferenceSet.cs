@@ -7,23 +7,24 @@ namespace PackageExplorerViewModel
 {
     public class EditablePackageReferenceSet : INotifyPropertyChanged
     {
-        private NuGetFramework _targetFramework;
-        private readonly ObservableCollection<string> _references;
+        private NuGetFramework? _targetFramework;
 
         public EditablePackageReferenceSet()
         {
-            _references = new ObservableCollection<string>();
+            References = new ObservableCollection<string>();
         }
 
         public EditablePackageReferenceSet(PackageReferenceSet packageReferenceSet)
         {
+            if (packageReferenceSet is null)
+                throw new System.ArgumentNullException(nameof(packageReferenceSet));
             _targetFramework = packageReferenceSet.TargetFramework;
-            _references = new ObservableCollection<string>(packageReferenceSet.References);
+            References = new ObservableCollection<string>(packageReferenceSet.References);
         }
 
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
 
-        public NuGetFramework TargetFramework
+        public NuGetFramework? TargetFramework
         {
             get
             {
@@ -34,7 +35,7 @@ namespace PackageExplorerViewModel
                 if (_targetFramework != value)
                 {
                     _targetFramework = value;
-                    OnPropertyChange("TargetFramework");
+                    OnPropertyChange(nameof(TargetFramework));
                 }
             }
         }
@@ -44,13 +45,7 @@ namespace PackageExplorerViewModel
             return new PackageReferenceSet(TargetFramework, References);
         }
 
-        public ObservableCollection<string> References
-        {
-            get
-            {
-                return _references;
-            }
-        }
+        public ObservableCollection<string> References { get; }
 
         private void OnPropertyChange(string propertyName)
         {

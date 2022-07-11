@@ -2,14 +2,19 @@
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using NuGetPe;
 
 namespace PackageExplorer
 {
     public partial class PortableLibraryDialog : StandardDialog
     {
+#pragma warning disable CS8618 // Non-nullable field is uninitialized.
         public PortableLibraryDialog()
+#pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
             InitializeComponent();
+
+            DiagnosticsClient.TrackPageView(nameof(PortableLibraryDialog));
         }
 
         public string GetSelectedFrameworkName()
@@ -43,11 +48,13 @@ namespace PackageExplorer
 
         private void OkButton_Click(object sender, RoutedEventArgs e)
         {
+            DiagnosticsClient.TrackEvent("PortableLibraryDialog_OkayClicked");
             DialogResult = true;
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
+            DiagnosticsClient.TrackEvent("PortableLibraryDialog_CancelClicked");
             DialogResult = false;
         }
 
