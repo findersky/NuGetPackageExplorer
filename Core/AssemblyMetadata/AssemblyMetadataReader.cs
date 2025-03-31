@@ -1,9 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,8 +53,7 @@ namespace NuGetPe.AssemblyMetadata
 
         public static async Task<AssemblyDebugData> ReadDebugData(Stream? peStream, Stream pdbStream)
         {
-            if (pdbStream is null)
-                throw new ArgumentNullException(nameof(pdbStream));
+            ArgumentNullException.ThrowIfNull(pdbStream);
 
             try
             {
@@ -72,10 +69,13 @@ namespace NuGetPe.AssemblyMetadata
             }
             finally
             {
-                peStream?.Dispose();
-                pdbStream.Dispose();
+                if (peStream != null)
+                {
+                    await peStream.DisposeAsync().ConfigureAwait(false);
+                }
+                await pdbStream.DisposeAsync().ConfigureAwait(false);
             }
-                  
+
         }
 
         private static void AddAssemblyAttributes(AssemblyMetadataParser parser, AssemblyMetaDataInfo result)

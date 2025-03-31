@@ -1,4 +1,7 @@
 {
+  "platform": {
+    "apiRuntime": "dotnet-isolated:8.0"
+  },
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
@@ -9,12 +12,35 @@
   },
   "routes": [
     {
+      "route": "/_framework/blazor.boot.*",
+      "headers": {
+        "cache-control": "must-revalidate, max-age=3600"
+      }
+    },
+    {
+      "route": "/_framework/dotnet.js",
+      "headers": {
+        "cache-control": "must-revalidate, max-age=3600"
+      }
+    },
+    {
+      "route": "/_framework/dotnet.js.*",
+      "headers": {
+        "cache-control": "must-revalidate, max-age=3600"
+      }
+    },
+    {
+      "route": "/_framework/*",
+      "headers": {
+        "cache-control": "public, immutable, max-age=31536000"
+      }
+    },
+    {
       "route": "/package_*",
       "headers": {
         "cache-control": "public, immutable, max-age=31536000"
       }
-    }
-    ,
+    },
     {
       "route": "/*",
       "headers": {

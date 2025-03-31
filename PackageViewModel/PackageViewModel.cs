@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Threading.Tasks;
 using System.Windows.Input;
+
 using NuGet.Packaging;
+
 using NuGetPackageExplorer.Types;
+
 using NuGetPe;
 
 using LazyPackageCommand = System.Lazy<NuGetPackageExplorer.Types.IPackageCommand, NuGetPackageExplorer.Types.IPackageCommandMetadata>;
@@ -283,7 +281,7 @@ namespace PackageExplorerViewModel
                     {
                         if (result!.IsFile && File.Exists(value))
                         {
-#if !NETSTANDARD2_1 // UNO TODO: Use proper platform detection
+#if !HAS_UNO // UNO TODO: Use proper platform detection
                             // Clean up the old one since we can't reliably change the Filter without a race
                             if (_watcher != null)
                             {
@@ -1467,10 +1465,7 @@ namespace PackageExplorerViewModel
 
         private void Export(string rootPath)
         {
-            if (rootPath == null)
-            {
-                throw new ArgumentNullException(nameof(rootPath));
-            }
+            ArgumentNullException.ThrowIfNull(rootPath);
 
             if (!Directory.Exists(rootPath))
             {
@@ -1575,8 +1570,7 @@ namespace PackageExplorerViewModel
         [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         public void AddDraggedAndDroppedFiles(PackageFolder? folder, string[] fileNames)
         {
-            if (fileNames is null)
-                throw new ArgumentNullException(nameof(fileNames));
+            ArgumentNullException.ThrowIfNull(fileNames);
 
             if (folder == null)
             {
@@ -1659,10 +1653,8 @@ namespace PackageExplorerViewModel
         [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "<Pending>")]
         public static void AddDraggedAndDroppedFileDescriptors(PackageFolder folder, IEnumerable<(string FilePath, Stream? Stream)> fileDescriptors)
         {
-            if (folder is null)
-                throw new ArgumentNullException(nameof(folder));
-            if (fileDescriptors is null)
-                throw new ArgumentNullException(nameof(fileDescriptors));
+            ArgumentNullException.ThrowIfNull(folder);
+            ArgumentNullException.ThrowIfNull(fileDescriptors);
             foreach (var fileDescription in fileDescriptors)
             {
                 var parts = fileDescription.FilePath.Split(Path.DirectorySeparatorChar);

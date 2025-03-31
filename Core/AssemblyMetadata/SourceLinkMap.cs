@@ -71,6 +71,7 @@ namespace Microsoft.SourceLink.Tools
         }
 
         public IReadOnlyList<Entry> Entries => _entries;
+        internal static readonly char[] Separator = ['/', '\\'];
 
         /// <summary>
         /// Parses Source Link JSON string.
@@ -80,10 +81,7 @@ namespace Microsoft.SourceLink.Tools
         /// <exception cref="JsonException"><paramref name="json"/> is not valid JSON string.</exception>
         public static SourceLinkMap Parse(string json)
         {
-            if (json is null)
-            {
-                throw new ArgumentNullException(nameof(json));
-            }
+            ArgumentNullException.ThrowIfNull(json);
 
             var list = new List<Entry>();
 
@@ -190,10 +188,7 @@ namespace Microsoft.SourceLink.Tools
 #endif
             out string? uri)
         {
-            if (path == null)
-            {
-                throw new ArgumentNullException(nameof(path));
-            }
+            ArgumentNullException.ThrowIfNull(path);
 
             if (path.Contains('*', StringComparison.Ordinal))
             {
@@ -209,7 +204,7 @@ namespace Microsoft.SourceLink.Tools
                 {
                     if (path.StartsWith(file.Path, StringComparison.OrdinalIgnoreCase))
                     {
-                        var escapedPath = string.Join("/", path[file.Path.Length..].Split(new[] { '/', '\\' }).Select(Uri.EscapeDataString));
+                        var escapedPath = string.Join("/", path[file.Path.Length..].Split(Separator).Select(Uri.EscapeDataString));
                         uri = mappedUri.Prefix + escapedPath + mappedUri.Suffix;
                         return true;
                     }
@@ -224,6 +219,6 @@ namespace Microsoft.SourceLink.Tools
 
             uri = null;
             return false;
-        } 
+        }
     }
 }

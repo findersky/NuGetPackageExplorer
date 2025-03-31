@@ -1,18 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using NuGetPackageExplorer.Types;
+﻿using NuGetPackageExplorer.Types;
+
 using NuGetPe;
 using NuGetPe.AssemblyMetadata;
+
 using PackageExplorerViewModel;
 
 #if HAS_UNO || USE_WINUI
 using Windows.UI.Text;
+
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Text;
+
 using Uno.Extensions;
 using Uno.Logging;
 
@@ -27,7 +27,7 @@ using System.Windows.Data;
 namespace PackageExplorer
 {
     [PackageContentViewerMetadata(100, ".dll", ".exe", ".winmd", SupportsWindows10S = false)]
-    internal class AssemblyFileViewer : IPackageContentViewer
+    internal sealed class AssemblyFileViewer : IPackageContentViewer
     {
 
         public object GetView(IPackageContent selectedFile, IReadOnlyList<IPackageContent> peerFiles)
@@ -139,7 +139,11 @@ namespace PackageExplorer
                 };
 #endif
             }
-            catch (Exception e)
+            catch (Exception
+#if HAS_UNO
+            e
+#endif
+            )
             {
 #if HAS_UNO
                 this.Log().Error("Failed to generate view", e);

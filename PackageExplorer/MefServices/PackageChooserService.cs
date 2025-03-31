@@ -1,15 +1,18 @@
-﻿using System;
-using System.ComponentModel.Composition;
+﻿using System.ComponentModel.Composition;
 using System.Windows;
+
 using NuGet.Protocol.Core.Types;
+
 using NuGetPackageExplorer.Types;
+
 using NuGetPe;
+
 using PackageExplorerViewModel;
 
 namespace PackageExplorer
 {
     [Export(typeof(IPackageChooser))]
-    internal class PackageChooserService : IPackageChooser
+    internal sealed partial class PackageChooserService : IPackageChooser
     {
         private PackageChooserViewModel? _viewModel;
 
@@ -18,9 +21,9 @@ namespace PackageExplorer
         private PackageChooserDialog? _pluginDialog;
 #endif
 
-#pragma warning disable CA2213 // Disposable fields should be disposed
+#pragma warning disable CA2213, IDE0044, CS0649 // Disposable fields should be disposed
         private PackageChooserViewModel? _pluginViewModel;
-#pragma warning restore CA2213 // Disposable fields should be disposed
+#pragma warning restore CA2213, IDE0044, CS0649 // Disposable fields should be disposed
 
 #pragma warning disable CS8618 // Non-nullable field is uninitialized.
         [Import]

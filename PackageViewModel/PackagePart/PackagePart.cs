@@ -1,10 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Windows.Input;
+
 using NuGet.Packaging;
+
 using NuGetPackageExplorer.Types;
 
 using NuGetPe;
@@ -19,16 +19,15 @@ namespace PackageExplorerViewModel
         private string? _name;
         private string _path;
         private string? _extension;
+#pragma warning disable IDE1006 // Naming Styles
         protected PackageFolder? _parent;
+#pragma warning restore IDE1006 // Naming Styles
 
 #pragma warning disable CS8618 // Non-nullable field is uninitialized.
         protected PackagePart(string name, PackageFolder? parent, PackageViewModel? viewModel)
 #pragma warning restore CS8618 // Non-nullable field is uninitialized.
         {
-            if (name == null)
-            {
-                throw new ArgumentNullException(nameof(name));
-            }
+            ArgumentNullException.ThrowIfNull(name);
 
             PackageViewModel = viewModel;
             _parent = parent;
@@ -46,7 +45,7 @@ namespace PackageExplorerViewModel
             {
                 if (_parent != value)
                 {
-                    _parent = (PackageFolder?) value;
+                    _parent = (PackageFolder?)value;
                     UpdatePath();
                 }
             }
@@ -57,8 +56,7 @@ namespace PackageExplorerViewModel
             get { return _name!; }
             set
             {
-                if (value == null)
-                    throw new ArgumentNullException(nameof(value));
+                ArgumentNullException.ThrowIfNull(value);
 
                 if (_name != value)
                 {

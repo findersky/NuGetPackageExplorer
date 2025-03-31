@@ -1,16 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Input;
+
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Versioning;
+
 using NuGetPackageExplorer.Types;
+
 using NuGetPe;
+
 using PackageType = NuGet.Packaging.Core.PackageType;
 
 namespace PackageExplorerViewModel
@@ -49,8 +49,7 @@ namespace PackageExplorerViewModel
 
         public EditablePackageMetadata(IPackageMetadata source, IUIServices uiServices, PackageViewModel packageViewModel)
         {
-            if (source is null)
-                throw new ArgumentNullException(nameof(source));
+            ArgumentNullException.ThrowIfNull(source);
             _uiServices = uiServices;
             _showValidationResultsCommand = new RelayCommand(OnShowValidationResult, () => ValidationResult != null);
 
@@ -79,7 +78,7 @@ namespace PackageExplorerViewModel
             ContentFiles = new ObservableCollection<ManifestContentFiles>(source.ContentFiles);
             _frameworkReferenceGroups = new ObservableCollection<FrameworkReferenceGroup>(source.FrameworkReferenceGroups);
 
-            if(source.Repository != null)
+            if (source.Repository != null)
             {
                 Repository = new RepositoryMetadataViewModel(source.Repository);
                 _underlyingRepository = source.Repository;
@@ -109,8 +108,9 @@ namespace PackageExplorerViewModel
 
         public async void LoadSignatureData(ISignaturePackage package)
         {
-            if (package is null)
-                throw new ArgumentNullException(nameof(package));
+            ArgumentNullException.ThrowIfNull(package);
+            if (!AppCompat.IsSupported(RuntimeFeature.Cryptography)) return;
+
             if (package.IsSigned)
             {
                 PublisherSignature = package.PublisherSignature;
